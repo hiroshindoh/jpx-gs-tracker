@@ -18,6 +18,7 @@ jobs:
       - run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git pull --rebase
           git add gs_data.json
           git diff --staged --quiet || git commit -m "データ更新: $(date '+%Y-%m-%d')"
           git push
