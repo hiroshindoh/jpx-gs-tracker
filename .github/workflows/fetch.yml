@@ -1,0 +1,23 @@
+name: JPX GS Data Fetcher
+
+on:
+  schedule:
+    - cron: '0 7 * * 1'
+  workflow_dispatch:
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install requests openpyxl
+      - run: python fetch_gs_data.py
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add gs_data.json
+          git diff --staged --quiet || git commit -m "データ更新: $(date '+%Y-%m-%d')"
+          git push
