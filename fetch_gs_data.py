@@ -15,8 +15,8 @@ def build_url(dt):
     return (
         "https://www.jpx.co.jp/automation/markets/derivatives/"
         "open-interest/files/"
-        + dt.strftime("%Y%m") + "/"
-        + dt.strftime("%Y%m%d") + "_nk225op_oi_by_tp_2.xlsx"
+        + dt.strftime("%Y") + "/"
+        + dt.strftime("%Y%m%d") + "_nk225op_oi_by_tp.xlsx"
     )
 
 def download_excel(url):
