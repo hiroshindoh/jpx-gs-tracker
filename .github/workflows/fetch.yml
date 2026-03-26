@@ -2,7 +2,7 @@ name: JPX GS Data Fetcher
 
 on:
   schedule:
-    - cron: '0 7 * * 1'
+    - cron: '0 7 * * 1-5'
   workflow_dispatch:
 
 jobs:
