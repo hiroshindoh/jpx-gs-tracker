@@ -14,13 +14,10 @@ jobs:
         with:
           python-version: '3.11'
       - run: pip install requests openpyxl
+      - run: python fetch_gs_data.py
       - run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add gs_data.json
-          git stash
-          git pull --rebase
-          git stash pop
           git add gs_data.json
           git diff --staged --quiet || git commit -m "データ更新: $(date '+%Y-%m-%d')"
           git push
