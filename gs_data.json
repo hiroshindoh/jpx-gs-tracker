@@ -1,5 +1,5 @@
 {
-  "updated": "2026-03-26 13:45:42",
+  "updated": "2026-03-26 14:07:38",
   "oi": {
     "date": "2026-03-13",
     "gs": [
@@ -35,38 +35,6 @@
     "gs": [
       {
         "date": "2026-03-26",
-        "product": "NK225F",
-        "contract": "NIKKEI 225 FUT 2606",
-        "type": null,
-        "strike": null,
-        "volume": 2000
-      },
-      {
-        "date": "2026-03-26",
-        "product": "NK225MF",
-        "contract": "MINI NK225 FUT 2604",
-        "type": null,
-        "strike": null,
-        "volume": 18
-      },
-      {
-        "date": "2026-03-26",
-        "product": "NK225MF",
-        "contract": "MINI NK225 FUT 2606",
-        "type": null,
-        "strike": null,
-        "volume": 7456
-      },
-      {
-        "date": "2026-03-26",
-        "product": "TOPIXF",
-        "contract": "TOPIX FUT 2606",
-        "type": null,
-        "strike": null,
-        "volume": 5915
-      },
-      {
-        "date": "2026-03-26",
         "product": "NK225E",
         "contract": "NIKKEI 225 OOP P2604-53000",
         "type": "PUT",
@@ -82,5 +50,13 @@
         "volume": 31
       }
     ]
+  },
+  "history": {
+    "2026-03-26": {
+      "L6": 2000,
+      "M4": 18,
+      "M6": 7456,
+      "T6": 5915
+    }
   }
 }
