@@ -151,6 +151,22 @@ def main():
         history[vol_date] = history_day
         print("history追記: " + vol_date + " " + str(history_day))
 
+    # ── oi_history に今週分を追記 ──
+    oi_history = existing.get("oi_history", [])
+    if oi_data:
+        new_entry = {
+            "date": date_str,
+            "gs": oi_data,
+            "strikes": {
+                "min": min(all_strikes) if all_strikes else 0,
+                "max": max(all_strikes) if all_strikes else 0,
+                "all": all_strikes
+            }
+        }
+        oi_history = [h for h in oi_history if h["date"] != date_str]
+        oi_history.append(new_entry)
+        oi_history.sort(key=lambda x: x["date"])
+    
     # ── JSON出力 ──
     output = {
         "updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -168,6 +184,7 @@ def main():
             "gs": vol_data
         },
         "history": history
+        "oi_history": oi_history
     }
 
     with open("gs_data.json", "w", encoding="utf-8") as f:
