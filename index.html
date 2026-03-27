@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="GS Dashboard">
+  <title>GS Derivatives Dashboard</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.12.7/Recharts.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0e1520; font-family: 'Helvetica Neue', sans-serif; }
+    button { cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+    const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+      ResponsiveContainer, ReferenceLine, Cell, LineChart, Line } = Recharts;
+
+    const DISCLOSE_FROM = 53125;
+    const ATM_LINE = 54000;
+    const BUY = "#1976d2", SELL = "#d32f2f";
+    const LC = "#e3f2fd", LP = "#fce4ec";
+    const JSON_URL = "https://hiroshindoh.github.io/jpx-gs-tracker/gs_data.json";
+
+    const OPTION_OI_DATA = [
+      {strike:51000,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:false},
+      {strike:51125,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:false},
+      {strike:51250,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:false},
+      {strike:51375,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:false},
+      {strike:51500,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:false},
+      {strike:51625,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:false},
+      {strike:51750,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:false},
+      {strike:51875,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:false},
+      {strike:52000,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:false},
+      {strike:52125,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:false},
+      {strike:52250,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:false},
+      {strike:52375,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:false},
+      {strike:52500,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:false},
+      {strike:52625,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:false},
+      {strike:52750,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:false},
+      {strike:52875,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:false},
+      {strike:53000,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:false},
+      {strike:53125,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:true},
+      {strike:53250,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:true},
+      {strike:53375,callBuy:0,callSell:0,putBuy:0,putSell:6,disclosed:true},
+      {strike:53500,callBuy:0,callSell:0,putBuy:12,putSell:0,disclosed:true},
+      {strike:53625,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:true},
+      {strike:53750,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:true},
+      {strike:53875,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:true},
+      {strike:54000,callBuy:150,callSell:0,putBuy:196,putSell:0,disclosed:true},
+      {strike:54125,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:true},
+      {strike:54250,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:true},
+      {strike:54375,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:true},
+      {strike:54500,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:true},
+      {strike:54625,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:true},
+      {strike:54750,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:true},
+      {strike:54875,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:true},
+      {strike:55000,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:true},
+      {strike:55125,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:true},
+      {strike:55250,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:true},
+      {strike:55375,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:true},
+      {strike:55500,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:true},
+      {strike:55625,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:true},
+      {strike:55750,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:true},
+      {strike:55875,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:true},
+      {strike:56000,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:true},
+    ];
+
+    const OPTION_VOL_DATA = OPTION_OI_DATA.map(d=>({strike:d.strike,callVol:0,putVol:d.strike===51000?25:0}));
+    const FUTURES_OI = [
+      {name:"LARGE 2606",value:-10020},{name:"LARGE 2609",value:27},
+      {name:"MINI 2604",value:500},{name:"MINI 2605",value:0},
+      {name:"MINI 2606",value:0},{name:"TOPIX 2606",value:-56545},{name:"TOPIX 2609",value:-600},
+    ];
+    const FALLBACK_OI = {
+      date:"2026-03-13",
+      gs:[
+        {strike:54000,type:"CALL",side:"Buy",qty:150},
+        {strike:54000,type:"PUT",side:"Buy",qty:196},
+        {strike:53500,type:"PUT",side:"Buy",qty:12},
+        {strike:53375,type:"PUT",side:"Sell",qty:6},
+      ],
+      strikes:{min:53125,max:54125}
+    };
+    const OITip = ({active,payload}) => {
+      if(!active||!payload?.length) return null;
+      const v=payload[0]?.value??0;
+      return <div style={{background:"#fff",border:"1px solid #bbb",padding:"7px 10px",borderRadius:6,fontSize:11}}><div style={{color:v>0?BUY:v<0?SELL:"#888",fontWeight:700}}>{v>0?"+":""}{v.toLocaleString()} 枚</div></div>;
+    };
+
+    function buildSnapshot(oiEntry) {
+      const strikeMin=oiEntry.strikes?.min||51000, strikeMax=oiEntry.strikes?.max||56000;
+      const map={};
+      for(let s=50000;s<=57000;s+=125) map[s]={strike:s,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:s>=strikeMin&&s<=strikeMax};
+      (oiEntry.gs||[]).forEach(d=>{
+        if(!map[d.strike]) map[d.strike]={strike:d.strike,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:true};
+        if(d.type==="CALL"&&d.side==="Buy") map[d.strike].callBuy=d.qty;
+        if(d.type==="CALL"&&d.side==="Sell") map[d.strike].callSell=d.qty;
+        if(d.type==="PUT"&&d.side==="Buy") map[d.strike].putBuy=d.qty;
+        if(d.type==="PUT"&&d.side==="Sell") map[d.strike].putSell=d.qty;
+      });
+      return map;
+    }
+
+    function Chart1({liveData}) {
+      const currentOI=liveData?.oi||FALLBACK_OI;
+      const latestMap=buildSnapshot(currentOI);
+      const chartData=Object.values(latestMap).sort((a,b)=>a.strike-b.strike);
+      const oiHistory=liveData?.oi_history||[];
+      const latestDate=currentOI?.date||"";
+      const oldSnapshots=oiHistory.filter(h=>h.date!==latestDate).map(h=>({date:h.date,map:buildSnapshot(h)}));
+      const callTotal=chartData.reduce((s,d)=>s+d.callBuy,0);
+      const putTotal=chartData.reduce((s,d)=>s+d.putBuy,0);
+      const pcr=(callTotal+putTotal)>0?(putTotal/(callTotal+putTotal)*100).toFixed(2):"0.00";
+      const data=[...chartData].reverse();
+      const MAX=200,ROW_H=11;
+      const [tooltip,setTooltip]=useState(null);
+      const oiDate=currentOI?.date||"";
+      const disclosMin=currentOI?.strikes?.min||DISCLOSE_FROM;
+      const disclosMax=currentOI?.strikes?.max||54125;
+      const dateLabel=oiDate.length>=10?oiDate.slice(5).replace("-","/"):"03/13";
+      return (
+        <div style={{background:"#fff",padding:"10px 6px",position:"relative"}} onMouseLeave={()=>setTooltip(null)}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:3}}>
+            <div>
+              <div style={{fontWeight:700,fontSize:12}}>Goldman_Sachs_Japan_CoLtd</div>
+              <div style={{fontSize:11,color:"#555"}}>2026年 04月限 建玉残高</div>
+            </div>
+            {(callTotal+putTotal)>0&&(()=>{
+              const r=22,cx=28,cy=30,total=callTotal+putTotal;
+              const a=(callTotal/total)*2*Math.PI;
+              const x1=cx+r*Math.sin(a),y1=cy-r*Math.cos(a),lg=a>Math.PI?1:0;
+              const lr=r*0.58;
+              const clx=cx+lr*Math.sin(a/2),cly=cy-lr*Math.cos(a/2);
+              const pm=a+(2*Math.PI-a)/2,plx=cx+lr*Math.sin(pm),ply=cy-lr*Math.cos(pm);
+              return <svg width={115} height={62} viewBox="0 0 115 62">
+                <circle cx={cx} cy={cy} r={r} fill="#f5a623"/>
+                <path d={`M${cx},${cy} L${cx},${cy-r} A${r},${r} 0 ${lg},1 ${x1},${y1} Z`} fill="#5b9bd5"/>
+                <text x={clx} y={cly-5} textAnchor="middle" fontSize={7} fill="#fff">call</text>
+                <text x={clx} y={cly+5} textAnchor="middle" fontSize={9} fontWeight={700} fill="#fff">{callTotal}</text>
+                <text x={plx} y={ply-5} textAnchor="middle" fontSize={7} fill="#fff">put</text>
+                <text x={plx} y={ply+5} textAnchor="middle" fontSize={9} fontWeight={700} fill="#fff">{putTotal}</text>
+                <text x={60} y={22} fontSize={8} fontWeight={700} fill="#555">PCR</text>
+                <text x={60} y={36} fontSize={12} fontWeight={700} fill="#1976d2">{pcr}%</text>
+              </svg>;
+            })()}
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 68px 1fr",marginBottom:2}}>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:7,color:"#888"}}>{[200,150,100,50,0].map(v=><span key={v}>{v}</span>)}</div>
+            <div/>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:7,color:"#888"}}>{[0,50,100,150,200].map(v=><span key={v}>{v}</span>)}</div>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 68px 1fr",borderBottom:"1px solid #ccc"}}>
+            <div style={{textAlign:"center",background:"#f5f5f5",fontSize:11,fontWeight:700,padding:"3px 0"}}>CALL</div>
+            <div style={{background:"#f5f5f5"}}/>
+            <div style={{textAlign:"center",background:"#f5f5f5",fontSize:11,fontWeight:700,padding:"3px 0"}}>PUT</div>
+          </div>
+          {data.map(d=>{
+            const isAtm=d.strike===ATM_LINE,BAR_H=ROW_H-3;
+            const bg=(d.disclosed&&d.strike>=disclosMin&&d.strike<=disclosMax)?"#fffde7":"#fff";
+            return (
+              <div key={d.strike} style={{position:"relative"}}>
+                {d.strike===disclosMax&&<div style={{position:"absolute",left:0,top:0,zIndex:10,background:"transparent",color:"#555",fontSize:7,fontWeight:700,padding:"1px 4px",lineHeight:"12px",pointerEvents:"none"}}>開示範囲（{dateLabel}）</div>}
+                <div style={{display:"grid",gridTemplateColumns:"1fr 68px 1fr",height:ROW_H}}>
+                  <div style={{background:bg,position:"relative",overflow:"hidden",cursor:"pointer",borderRight:"1px solid #ccc"}} onMouseEnter={()=>setTooltip({strike:d.strike,buy:d.callBuy,sell:d.callSell,side:"CALL"})}>
+                    {oldSnapshots.map(snap=>{const od=snap.map[d.strike];if(!od)return null;return<div key={snap.date}>{od.callBuy>0&&<div style={{position:"absolute",right:0,top:1,height:BAR_H,width:`${Math.min(od.callBuy/MAX*100,100)}%`,background:"rgba(25,118,210,0.22)"}}/>}{od.callSell>0&&<div style={{position:"absolute",right:`${Math.min(od.callBuy/MAX*100,100)}%`,top:1,height:BAR_H,width:`${Math.min(od.callSell/MAX*100,100)}%`,background:"rgba(211,47,47,0.22)"}}/>}</div>;})}
+                    {d.callBuy>0&&<div style={{position:"absolute",right:0,top:1,height:BAR_H,width:`${Math.min(d.callBuy/MAX*100,100)}%`,background:BUY}}/>}
+                    {d.callSell>0&&<div style={{position:"absolute",right:`${Math.min(d.callBuy/MAX*100,100)}%`,top:1,height:BAR_H,width:`${Math.min(d.callSell/MAX*100,100)}%`,background:SELL}}/>}
+                  </div>
+                  <div style={{height:ROW_H,display:"flex",alignItems:"center",justifyContent:"center",fontSize:7,fontWeight:isAtm?700:400,color:"#555",background:bg}}>{d.strike.toLocaleString()}</div>
+                  <div style={{background:bg,position:"relative",overflow:"hidden",cursor:"pointer",borderLeft:"1px solid #ccc"}} onMouseEnter={()=>setTooltip({strike:d.strike,buy:d.putBuy,sell:d.putSell,side:"PUT"})}>
+                    {oldSnapshots.map(snap=>{const od=snap.map[d.strike];if(!od)return null;return<div key={snap.date}>{od.putBuy>0&&<div style={{position:"absolute",left:0,top:1,height:BAR_H,width:`${Math.min(od.putBuy/MAX*100,100)}%`,background:"rgba(25,118,210,0.22)"}}/>}{od.putSell>0&&<div style={{position:"absolute",left:`${Math.min(od.putBuy/MAX*100,100)}%`,top:1,height:BAR_H,width:`${Math.min(od.putSell/MAX*100,100)}%`,background:"rgba(211,47,47,0.22)"}}/>}</div>;})}
+                    {d.putBuy>0&&<div style={{position:"absolute",left:0,top:1,height:BAR_H,width:`${Math.min(d.putBuy/MAX*100,100)}%`,background:BUY}}/>}
+                    {d.putSell>0&&<div style={{position:"absolute",left:`${Math.min(d.putBuy/MAX*100,100)}%`,top:1,height:BAR_H,width:`${Math.min(d.putSell/MAX*100,100)}%`,background:SELL}}/>}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+          {tooltip&&<div style={{position:"fixed",top:"50%",left:"50%",transform:"translate(-50%,-50%)",background:"#fff",border:"1px solid #bbb",borderRadius:8,padding:"10px 14px",fontSize:12,zIndex:999,boxShadow:"0 4px 12px rgba(0,0,0,0.15)",pointerEvents:"none"}}><div style={{fontWeight:700,marginBottom:4}}>{tooltip.strike.toLocaleString()}円</div><div style={{color:BUY}}>Buy: {tooltip.buy??0}枚</div><div style={{color:SELL}}>Sell: {tooltip.sell??0}枚</div></div>}
+          <div style={{marginTop:5,padding:"4px 8px",background:"#f5f5f5",borderRadius:4,fontSize:8,display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+            <span><span style={{display:"inline-block",width:14,height:10,background:"#fffde7",border:"1px solid #ccc"}}/> 開示範囲</span>
+            <span style={{color:BUY}}>■ Buy</span><span style={{color:SELL}}>■ Sell</span>
+            <span style={{color:"rgba(25,118,210,0.5)"}}>■ 過去データ</span>
+          </div>
+        </div>
+      );
+    }
+    function Chart2({liveData}) {
+      const [tooltip,setTooltip]=useState(null);
+      const buildVolData=()=>{
+        if(!liveData?.vol?.gs?.length) return OPTION_VOL_DATA;
+        const opts=liveData.vol.gs.filter(d=>d.type==="CALL"||d.type==="PUT");
+        if(opts.length===0) return OPTION_VOL_DATA;
+        const strikeSet=new Set(opts.map(d=>d.strike).filter(Boolean));
+        const oiMin=liveData.oi?.strikes?.min||51000,oiMax=liveData.oi?.strikes?.max||56000;
+        for(let s=oiMin;s<=oiMax;s+=125) strikeSet.add(s);
+        const map={};
+        strikeSet.forEach(s=>{map[s]={strike:s,callVol:0,putVol:0};});
+        opts.forEach(d=>{
+          if(!map[d.strike]) map[d.strike]={strike:d.strike,callVol:0,putVol:0};
+          if(d.type==="CALL") map[d.strike].callVol+=d.volume;
+          if(d.type==="PUT")  map[d.strike].putVol+=d.volume;
+        });
+        return Object.values(map).sort((a,b)=>a.strike-b.strike);
+      };
+      const volData=buildVolData(),data=[...volData].reverse();
+      const putT=volData.reduce((s,d)=>s+d.putVol,0),callT=volData.reduce((s,d)=>s+d.callVol,0);
+      const pcr=callT===0?"100.00":(putT/(callT+putT)*100).toFixed(2);
+      const MAX=Math.max(...volData.map(d=>Math.max(d.callVol,d.putVol)),10),ROW_H=13;
+      const volDate=liveData?.vol?.date||"";
+      return (
+        <div style={{background:"#fff",padding:"10px 6px",position:"relative"}} onMouseLeave={()=>setTooltip(null)}>
+          <div style={{fontWeight:700,fontSize:12,textAlign:"center"}}>Goldman_Sachs_Japan_CoLtd</div>
+          <div style={{fontSize:11,textAlign:"center",color:"#555",marginBottom:1}}>2026年 04月限 本日の取引量{volDate?`（${volDate}）`:""}</div>
+          <div style={{background:"#ffebee",border:"2px solid #e53935",borderRadius:6,padding:"5px 8px",textAlign:"center",fontSize:11,fontWeight:700,color:"#c62828",margin:"4px 0"}}>売りか買いかは分かりません</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 64px 1fr",marginBottom:2}}>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:7,color:"#888"}}>{[MAX,Math.round(MAX*0.5),0].map(v=><span key={v}>{v}</span>)}</div>
+            <div/>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:7,color:"#888"}}>{[0,Math.round(MAX*0.5),MAX].map(v=><span key={v}>{v}</span>)}</div>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 64px 1fr",borderBottom:"1px solid #ccc"}}>
+            <div style={{textAlign:"center",background:LC,fontSize:11,fontWeight:700,padding:"3px 0"}}>CALL</div>
+            <div style={{background:"#f5f5f5",display:"flex",alignItems:"center",justifyContent:"center",fontSize:8,color:"#555"}}>strike</div>
+            <div style={{textAlign:"center",background:LP,fontSize:11,fontWeight:700,padding:"3px 0"}}>PUT (PCR:{pcr}%)</div>
+          </div>
+          {data.map(d=>{
+            const hasCall=d.callVol>0,hasPut=d.putVol>0,active=hasCall||hasPut;
+            return <div key={d.strike} style={{display:"grid",gridTemplateColumns:"1fr 64px 1fr",height:ROW_H}}>
+              <div style={{background:"#fce8e8",position:"relative",overflow:"hidden",cursor:"pointer"}} onMouseEnter={()=>setTooltip({strike:d.strike,call:d.callVol,put:d.putVol})}>
+                {hasCall&&<div style={{position:"absolute",right:0,top:1,height:ROW_H-2,width:`${Math.min(d.callVol/MAX*100,100)}%`,background:"#5b9bd5"}}/>}
+              </div>
+              <div style={{height:ROW_H,display:"flex",alignItems:"center",justifyContent:"center",fontSize:active?9:7,fontWeight:active?700:400,color:active?"#e65100":"#777",background:active?"#fff3e0":"#f9f9f9"}}>{d.strike.toLocaleString()}</div>
+              <div style={{background:"#e8f4fd",position:"relative",overflow:"hidden",cursor:"pointer"}} onMouseEnter={()=>setTooltip({strike:d.strike,call:d.callVol,put:d.putVol})}>
+                {hasPut&&<div style={{position:"absolute",left:0,top:1,height:ROW_H-2,width:`${Math.min(d.putVol/MAX*100,100)}%`,background:SELL}}/>}
+              </div>
+            </div>;
+          })}
+          {tooltip&&<div style={{position:"fixed",top:"50%",left:"50%",transform:"translate(-50%,-50%)",background:"#fff",border:"1px solid #bbb",borderRadius:8,padding:"10px 14px",fontSize:12,zIndex:999,boxShadow:"0 4px 12px rgba(0,0,0,0.15)",pointerEvents:"none"}}><div style={{fontWeight:700,marginBottom:4}}>{tooltip.strike.toLocaleString()}円</div><div style={{color:"#5b9bd5"}}>CALL: {tooltip.call??0}枚</div><div style={{color:SELL}}>PUT: {tooltip.put??0}枚</div></div>}
+        </div>
+      );
+    }
+
+    const SERIES_DEF=[
+      {key:"L6",label:"ラージ期近(6月)",color:"#ef5350",dash:""},
+      {key:"L9",label:"ラージ期先(9月)",color:"#ef5350",dash:"4 3"},
+      {key:"T6",label:"TPX期近(6月)",color:"#43a047",dash:""},
+      {key:"T9",label:"TPX期先(9月)",color:"#43a047",dash:"4 3"},
+      {key:"M4",label:"ミニ期近(4月)",color:"#ff9800",dash:""},
+      {key:"M5",label:"ミニ期先(5月)",color:"#ff9800",dash:"4 3"},
+      {key:"M6",label:"ミニ期先先(6月)",color:"#ff9800",dash:"2 2"},
+    ];
+
+    function Chart3({liveData}) {
+      const history=liveData?.history||{},dates=Object.keys(history).sort();
+      if(dates.length===0) return <div style={{background:"#1a1a2e",padding:24,color:"#888",textAlign:"center"}}><div style={{fontSize:13,color:"#fff",marginBottom:8}}>GSAX 先物取引量 時系列</div><div style={{fontSize:11}}>データ蓄積中... ⏳<br/>毎営業日16:00に自動追加されます</div></div>;
+      const chartData=dates.map(date=>({d:date.slice(5).replace("-","/"),date,...history[date]}));
+      const lastDate=dates[dates.length-1];
+      return (
+        <div style={{background:"#1a1a2e",padding:"10px 6px",color:"#fff"}}>
+          <div style={{fontWeight:700,fontSize:13,marginBottom:2}}>GSAX 先物取引量　{lastDate}現在</div>
+          <div style={{fontSize:8,color:"#445",marginBottom:4}}>※ JPX日次データより自動集計（{dates.length}営業日分）</div>
+          {SERIES_DEF.map(s=>{
+            const vals=chartData.map(d=>d[s.key]??0),maxV=Math.max(...vals,1),last=history[lastDate]?.[s.key]??0;
+            if(maxV<=1) return null;
+            return <div key={s.key} style={{marginBottom:1}}>
+              <div style={{display:"flex",alignItems:"center"}}>
+                <div style={{width:38,fontSize:7,color:s.color,textAlign:"right",paddingRight:3,flexShrink:0}}>{maxV.toLocaleString()}-</div>
+                <div style={{flex:1,borderBottom:"1px solid #2a3a50"}}>
+                  <div style={{fontSize:7,color:"#556",paddingLeft:2}}>{s.label}</div>
+                  <ResponsiveContainer width="100%" height={36}>
+                    <LineChart data={chartData} margin={{left:0,right:0,top:2,bottom:0}}>
+                      <XAxis dataKey="d" hide/><YAxis domain={[0,maxV]} hide/>
+                      <Tooltip contentStyle={{background:"#222",border:"none",color:"#fff",fontSize:9}} formatter={v=>[v?.toLocaleString()+"枚",s.label]} labelFormatter={l=>chartData.find(d=>d.d===l)?.date||l}/>
+                      <Line type="monotone" dataKey={s.key} stroke={s.color} strokeDasharray={s.dash} strokeWidth={1.5} dot={false} connectNulls/>
+                    </LineChart>
+                  </ResponsiveContainer>
+                  <div style={{fontSize:7,color:"#556",paddingLeft:2}}>0-</div>
+                </div>
+                <div style={{width:44,textAlign:"right",fontSize:10,color:last>0?s.color:"#444",fontWeight:700,paddingLeft:3,flexShrink:0}}>{last>0?last.toLocaleString():"-"}</div>
+              </div>
+            </div>;
+          })}
+          <ResponsiveContainer width="100%" height={16}>
+            <LineChart data={chartData} margin={{left:38,right:44,top:0,bottom:0}}>
+              <XAxis dataKey="d" tick={{fontSize:7,fill:"#888"}} interval={Math.max(0,Math.floor(dates.length/8)-1)} axisLine={false} tickLine={false}/>
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      );
+    }
+
+    function Chart4() {
+      return (
+        <div style={{background:"#fff",padding:"10px 6px"}}>
+          <div style={{fontWeight:700,fontSize:11,textAlign:"center"}}>Goldman_Sachs_Japan_CoLtd — 2026-03-21</div>
+          <div style={{fontSize:10,textAlign:"center",color:"#555",marginBottom:6}}>225 Futures Position（枚・売越=マイナス/買越=プラス）</div>
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={FUTURES_OI} margin={{left:20,right:20,top:16,bottom:20}}>
+              <CartesianGrid strokeDasharray="2 4" stroke="#eee"/>
+              <XAxis dataKey="name" tick={{fontSize:9}}/>
+              <YAxis tick={{fontSize:9}} tickFormatter={v=>v.toLocaleString()}/>
+              <ReferenceLine y={0} stroke="#333" strokeWidth={2}/>
+              <Tooltip content={<OITip/>}/>
+              <Bar dataKey="value" radius={[3,3,0,0]} label={{position:"top",fontSize:9,formatter:v=>v!==0?(v>0?"+":"")+v.toLocaleString():"0"}}>
+                {FUTURES_OI.map((d,i)=><Cell key={i} fill={d.value>0?BUY:d.value<0?SELL:"#bbb"}/>)}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+          <div style={{display:"flex",justifyContent:"center",gap:20,fontSize:10}}>
+            <span style={{color:SELL}}>■ 売り越し</span><span style={{color:BUY}}>■ 買い越し</span>
+          </div>
+        </div>
+      );
+    }
+    function App() {
+      const [tab,setTab]=useState("all");
+      const [liveData,setLiveData]=useState(null);
+      const [loading,setLoading]=useState(true);
+      const [lastUpdated,setLastUpdated]=useState("");
+
+      useEffect(()=>{
+        fetch(JSON_URL+"?t="+Date.now())
+          .then(r=>r.json())
+          .then(json=>{setLiveData(json);setLastUpdated(json.updated||"");setLoading(false);})
+          .catch(()=>setLoading(false));
+      },[]);
+
+      const tabs=[{id:"all",label:"全グラフ"},{id:"c1",label:"①建玉残高"},{id:"c2",label:"②取引量"},{id:"c3",label:"③時系列"},{id:"c4",label:"④先物建玉"}];
+      const show=id=>tab==="all"||tab===id;
+
+      return (
+        <div style={{fontFamily:"'Helvetica Neue',sans-serif",background:"#0e1520",minHeight:"100vh",padding:12}}>
+          <div style={{textAlign:"center",marginBottom:12}}>
+            <div style={{fontSize:10,letterSpacing:2,color:"#00d4ff",border:"1px solid #00d4ff33",borderRadius:20,display:"inline-block",padding:"2px 14px",marginBottom:6}}>
+              GS DERIVATIVES DASHBOARD · JPX自動取得
+            </div>
+            <h1 style={{margin:0,fontSize:16,fontWeight:700,background:"linear-gradient(90deg,#00d4ff,#fff,#ff3d6b)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>
+              Goldman Sachs — 日経225 先物・オプション 建玉分析
+            </h1>
+            <div style={{marginTop:4,fontSize:10,display:"flex",justifyContent:"center",alignItems:"center",gap:8}}>
+              {loading?<span style={{color:"#ffb74d"}}>⏳ データ取得中...</span>
+              :liveData?<><span style={{color:"#00e676"}}>✅ 自動取得データ</span><span style={{color:"#4a6080"}}>|</span><span style={{color:"#4a6060"}}>更新: {lastUpdated}</span></>
+              :<span style={{color:"#ff5252"}}>⚠️ 取得失敗 — フォールバックデータ使用</span>}
+            </div>
+          </div>
+
+          <div style={{display:"flex",gap:4,marginBottom:12,flexWrap:"wrap"}}>
+            {tabs.map(t=>(
+              <button key={t.id} onClick={()=>setTab(t.id)} style={{background:tab===t.id?"#00d4ff":"#1a2840",color:tab===t.id?"#0e1520":"#90a4ae",border:"none",borderRadius:6,padding:"5px 11px",fontSize:11,fontWeight:tab===t.id?700:400}}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          <div style={{display:tab==="all"?"grid":"block",gridTemplateColumns:tab==="all"?"1fr 1fr":undefined,gap:12}}>
+            {show("c1")&&<div style={{background:"#fff",borderRadius:8,overflow:"hidden",boxShadow:"0 2px 16px rgba(0,0,0,0.5)"}}>
+              <div style={{background:"#1565c0",color:"#fff",padding:"5px 10px",fontSize:10,fontWeight:700}}>① 建玉残高（行使価格別）</div>
+              <Chart1 liveData={liveData}/>
+            </div>}
+            {show("c2")&&<div style={{background:"#fff",borderRadius:8,overflow:"hidden",boxShadow:"0 2px 16px rgba(0,0,0,0.5)"}}>
+              <div style={{background:"#b71c1c",color:"#fff",padding:"5px 10px",fontSize:10,fontWeight:700}}>② 当日取引量（行使価格別）</div>
+              <Chart2 liveData={liveData}/>
+            </div>}
+            {show("c3")&&<div style={{background:"#1a1a2e",borderRadius:8,overflow:"hidden",boxShadow:"0 2px 16px rgba(0,0,0,0.5)"}}>
+              <div style={{background:"#1b5e20",color:"#fff",padding:"5px 10px",fontSize:10,fontWeight:700}}>③ 先物取引量 時系列</div>
+              <Chart3 liveData={liveData}/>
+            </div>}
+            {show("c4")&&<div style={{background:"#fff",borderRadius:8,overflow:"hidden",boxShadow:"0 2px 16px rgba(0,0,0,0.5)"}}>
+              <div style={{background:"#4a148c",color:"#fff",padding:"5px 10px",fontSize:10,fontWeight:700}}>④ 先物建玉残高（限月別）</div>
+              <Chart4/>
+            </div>}
+          </div>
+
+          <div style={{textAlign:"center",color:"#2a4060",fontSize:9,marginTop:12}}>
+            ※ JPX公開データに基づきます。投資判断の参考情報です。
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+  </script>
+</body>
+</html>
