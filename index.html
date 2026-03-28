@@ -75,27 +75,72 @@ function hideTip(){ document.getElementById("tip").style.display = "none"; }
 
 function makeChart1(){
   const cur = liveData?.oi || FALLBACK_OI;
-  const lmap = buildSnapshot(cur);
-  const cd = Object.values(lmap).sort((a,b)=>a.strike-b.strike);
   const hist = liveData?.oi_history || [];
-  const ld = cur?.date || "";
-  const old = hist.filter(h=>h.date!==ld).map(h=>({date:h.date,map:buildSnapshot(h)}));
-  const ct = cd.reduce((s,d)=>s+d.callBuy,0);
-  const pt = cd.reduce((s,d)=>s+d.putBuy,0);
+
+  // 全スナップショット（oi_history 全件）を日付順で処理
+  // 各スナップショットに色と日付ラベルを割り当て
+  const ZONE_COLORS = ["#fff9c4","#ffe0b2","#f3e5f5","#e8f5e9","#e3f2fd"];
+  const allSnaps = hist.map((h,i)=>({
+    date: h.date,
+    map: buildSnapshot(h),
+    strikes: h.strikes,
+    color: ZONE_COLORS[i] || "#f5f5f5",
+    label: h.date.length>=10 ? h.date.slice(5).replace("-","/") : h.date,
+    isCurrent: h.date === cur.date
+  }));
+
+  // 最新スナップショット（cur と同じ date）
+  const curSnap = allSnaps.find(s=>s.isCurrent) || {
+    date: cur.date, map: buildSnapshot(cur), strikes: cur.strikes,
+    color: "#fffde7",
+    label: cur.date.length>=10 ? cur.date.slice(5).replace("-","/") : "03/13",
+    isCurrent: true
+  };
+
+  // 全ストライクのセット（全スナップショットをマージ）
+  const allStrikesSet = new Set();
+  for(let s=51000;s<=57000;s+=125) allStrikesSet.add(s);
+  const sortedStrikes = [...allStrikesSet].sort((a,b)=>a-b);
+
+  // 各ストライクの表示データを構築
+  const cd = sortedStrikes.map(strike=>{
+    // 最新スナップショットのデータ
+    const cur_d = curSnap.map[strike] || {strike,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:false};
+    // どのゾーンに属するか（複数可）
+    const zones = allSnaps.filter(s=>{
+      const mn=s.strikes?.min||0, mx=s.strikes?.max||0;
+      return strike>=mn && strike<=mx;
+    });
+    return {...cur_d, zones};
+  });
+
+  // CALL/PUT合計（全スナップショット合算）
+  let ct=0,pt=0;
+  allSnaps.forEach(s=>{
+    Object.values(s.map).forEach(d=>{ct+=d.callBuy;pt+=d.putBuy;});
+  });
+  // 重複除去のため最新のみで計算
+  ct = Object.values(curSnap.map).reduce((s,d)=>s+d.callBuy,0);
+  pt = Object.values(curSnap.map).reduce((s,d)=>s+d.putBuy,0);
+  // 他スナップのデータも加算（重複しないストライクのみ）
+  allSnaps.filter(s=>!s.isCurrent).forEach(s=>{
+    Object.values(s.map).forEach(d=>{
+      if(!curSnap.map[d.strike]||curSnap.map[d.strike].callBuy===0) ct+=d.callBuy;
+      if(!curSnap.map[d.strike]||curSnap.map[d.strike].putBuy===0) pt+=d.putBuy;
+    });
+  });
   const pcr = (ct+pt)>0 ? (pt/(ct+pt)*100).toFixed(2) : "0.00";
   const data = [...cd].reverse();
   const MAX=200, RH=11;
-  const dmn=cur?.strikes?.min||DISCLOSE_FROM, dmx=cur?.strikes?.max||54125;
-  const dl=ld.length>=10?ld.slice(5).replace("-","/"):"03/13";
 
-  // Pie chart SVG
-  let pieHTML = "";
+  // 円グラフ
+  let pieHTML="";
   if(ct+pt>0){
     const r=22,cx=28,cy=30,tot=ct+pt,a=(ct/tot)*2*Math.PI;
     const x1=cx+r*Math.sin(a),y1=cy-r*Math.cos(a),lg=a>Math.PI?1:0,lr=r*0.58;
     const clx=cx+lr*Math.sin(a/2),cly=cy-lr*Math.cos(a/2);
     const pm=a+(2*Math.PI-a)/2,plx=cx+lr*Math.sin(pm),ply=cy-lr*Math.cos(pm);
-    pieHTML = `<svg width="115" height="62" viewBox="0 0 115 62">
+    pieHTML=`<svg width="115" height="62" viewBox="0 0 115 62">
       <circle cx="${cx}" cy="${cy}" r="${r}" fill="#f5a623"/>
       <path d="M${cx},${cy} L${cx},${cy-r} A${r},${r} 0 ${lg},1 ${x1},${y1} Z" fill="#5b9bd5"/>
       <text x="${clx}" y="${cly-5}" text-anchor="middle" font-size="7" fill="#fff">call</text>
@@ -107,44 +152,64 @@ function makeChart1(){
     </svg>`;
   }
 
-  let rowsHTML = "";
+  let rowsHTML="";
   data.forEach(d=>{
     const isAtm=d.strike===ATM_LINE, BH=RH-3;
-    const bg=(d.disclosed&&d.strike>=dmn&&d.strike<=dmx)?"#fffde7":"#fff";
-    const labelTop = d.strike===dmx ? `<div style="position:absolute;left:0;top:0;z-index:10;font-size:7px;font-weight:700;color:#555;padding:1px 4px">開示範囲（${dl}）</div>` : "";
 
+    // 背景色：属するゾーンの中で最新のものを使用
+    let bg="#fff";
+    if(d.zones && d.zones.length>0){
+      bg = d.zones[d.zones.length-1].color;
+    }
+
+    // 各ゾーンの最上行にラベルを表示
+    let labelHTML="";
+    if(d.zones){
+      d.zones.forEach(z=>{
+        if(d.strike===z.strikes?.max){
+          labelHTML+=`<div style="position:absolute;left:0;top:0;z-index:10;font-size:7px;font-weight:700;color:#333;padding:1px 4px;pointer-events:none">開示範囲（${z.label}）</div>`;
+        }
+      });
+    }
+
+    // 過去スナップショットの薄い棒
     let oldBarsCall="", oldBarsPut="";
-    old.forEach(sn=>{
-      const o=sn.map[d.strike];
+    allSnaps.filter(s=>!s.isCurrent).forEach(s=>{
+      const o=s.map[d.strike];
       if(!o) return;
-      if(o.callBuy>0) oldBarsCall+=`<div style="position:absolute;right:0;top:1px;height:${BH}px;width:${Math.min(o.callBuy/MAX*100,100)}%;background:rgba(25,118,210,0.22)"></div>`;
-      if(o.callSell>0) oldBarsCall+=`<div style="position:absolute;right:${Math.min(o.callBuy/MAX*100,100)}%;top:1px;height:${BH}px;width:${Math.min(o.callSell/MAX*100,100)}%;background:rgba(211,47,47,0.22)"></div>`;
-      if(o.putBuy>0) oldBarsPut+=`<div style="position:absolute;left:0;top:1px;height:${BH}px;width:${Math.min(o.putBuy/MAX*100,100)}%;background:rgba(25,118,210,0.22)"></div>`;
-      if(o.putSell>0) oldBarsPut+=`<div style="position:absolute;left:${Math.min(o.putBuy/MAX*100,100)}%;top:1px;height:${BH}px;width:${Math.min(o.putSell/MAX*100,100)}%;background:rgba(211,47,47,0.22)"></div>`;
+      if(o.callBuy>0) oldBarsCall+=`<div style="position:absolute;right:0;top:1px;height:${BH}px;width:${Math.min(o.callBuy/MAX*100,100)}%;background:rgba(25,118,210,0.25)"></div>`;
+      if(o.callSell>0) oldBarsCall+=`<div style="position:absolute;right:${Math.min(o.callBuy/MAX*100,100)}%;top:1px;height:${BH}px;width:${Math.min(o.callSell/MAX*100,100)}%;background:rgba(211,47,47,0.25)"></div>`;
+      if(o.putBuy>0) oldBarsPut+=`<div style="position:absolute;left:0;top:1px;height:${BH}px;width:${Math.min(o.putBuy/MAX*100,100)}%;background:rgba(25,118,210,0.25)"></div>`;
+      if(o.putSell>0) oldBarsPut+=`<div style="position:absolute;left:${Math.min(o.putBuy/MAX*100,100)}%;top:1px;height:${BH}px;width:${Math.min(o.putSell/MAX*100,100)}%;background:rgba(211,47,47,0.25)"></div>`;
     });
 
-    const callBuyBar = d.callBuy>0?`<div style="position:absolute;right:0;top:1px;height:${BH}px;width:${Math.min(d.callBuy/MAX*100,100)}%;background:${BUY}"></div>`:"";
-    const callSellBar = d.callSell>0?`<div style="position:absolute;right:${Math.min(d.callBuy/MAX*100,100)}%;top:1px;height:${BH}px;width:${Math.min(d.callSell/MAX*100,100)}%;background:${SELL}"></div>`:"";
-    const putBuyBar = d.putBuy>0?`<div style="position:absolute;left:0;top:1px;height:${BH}px;width:${Math.min(d.putBuy/MAX*100,100)}%;background:${BUY}"></div>`:"";
-    const putSellBar = d.putSell>0?`<div style="position:absolute;left:${Math.min(d.putBuy/MAX*100,100)}%;top:1px;height:${BH}px;width:${Math.min(d.putSell/MAX*100,100)}%;background:${SELL}"></div>`:"";
+    // 最新の棒
+    const cur_d = curSnap.map[d.strike];
+    const callBuyBar = cur_d?.callBuy>0?`<div style="position:absolute;right:0;top:1px;height:${BH}px;width:${Math.min(cur_d.callBuy/MAX*100,100)}%;background:${BUY}"></div>`:"";
+    const callSellBar = cur_d?.callSell>0?`<div style="position:absolute;right:${Math.min((cur_d?.callBuy||0)/MAX*100,100)}%;top:1px;height:${BH}px;width:${Math.min(cur_d.callSell/MAX*100,100)}%;background:${SELL}"></div>`:"";
+    const putBuyBar = cur_d?.putBuy>0?`<div style="position:absolute;left:0;top:1px;height:${BH}px;width:${Math.min(cur_d.putBuy/MAX*100,100)}%;background:${BUY}"></div>`:"";
+    const putSellBar = cur_d?.putSell>0?`<div style="position:absolute;left:${Math.min((cur_d?.putBuy||0)/MAX*100,100)}%;top:1px;height:${BH}px;width:${Math.min(cur_d.putSell/MAX*100,100)}%;background:${SELL}"></div>`:"";
 
-    rowsHTML += `<div style="position:relative">
-      ${labelTop}
+    rowsHTML+=`<div style="position:relative">
+      ${labelHTML}
       <div style="display:grid;grid-template-columns:1fr 68px 1fr;height:${RH}px">
         <div style="background:${bg};position:relative;overflow:hidden;border-right:1px solid #ccc"
-          ontouchstart="showTip(${d.strike},'Buy',${d.callBuy},'Sell',${d.callSell})"
-          onmouseenter="showTip(${d.strike},'Buy',${d.callBuy},'Sell',${d.callSell})">
+          ontouchstart="showTip(${d.strike},'Buy',${cur_d?.callBuy||0},'Sell',${cur_d?.callSell||0})"
+          onmouseenter="showTip(${d.strike},'Buy',${cur_d?.callBuy||0},'Sell',${cur_d?.callSell||0})">
           ${oldBarsCall}${callBuyBar}${callSellBar}
         </div>
         <div style="height:${RH}px;display:flex;align-items:center;justify-content:center;font-size:7px;font-weight:${isAtm?700:400};color:#555;background:${bg}">${d.strike.toLocaleString()}</div>
         <div style="background:${bg};position:relative;overflow:hidden;border-left:1px solid #ccc"
-          ontouchstart="showTip(${d.strike},'Buy',${d.putBuy},'Sell',${d.putSell})"
-          onmouseenter="showTip(${d.strike},'Buy',${d.putBuy},'Sell',${d.putSell})">
+          ontouchstart="showTip(${d.strike},'Buy',${cur_d?.putBuy||0},'Sell',${cur_d?.putSell||0})"
+          onmouseenter="showTip(${d.strike},'Buy',${cur_d?.putBuy||0},'Sell',${cur_d?.putSell||0})">
           ${oldBarsPut}${putBuyBar}${putSellBar}
         </div>
       </div>
     </div>`;
   });
+
+  // 凡例（各開示範囲の色）
+  const legendZones = allSnaps.map(s=>`<span><span style="display:inline-block;width:12px;height:9px;background:${s.color};border:1px solid #ccc"></span> ${s.label}</span>`).join("");
 
   return `<div class="chart-inner" ontouchend="hideTip()" onmouseleave="hideTip()">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:3px">
@@ -163,10 +228,10 @@ function makeChart1(){
       <div style="text-align:center;background:#f5f5f5;font-size:11px;font-weight:700;padding:3px 0">PUT</div>
     </div>
     ${rowsHTML}
-    <div style="margin-top:5px;padding:4px 8px;background:#f5f5f5;border-radius:4px;font-size:8px;display:flex;gap:8px;flex-wrap:wrap">
-      <span><span style="display:inline-block;width:12px;height:9px;background:#fffde7;border:1px solid #ccc"></span> 開示範囲</span>
+    <div style="margin-top:5px;padding:4px 8px;background:#f5f5f5;border-radius:4px;font-size:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      ${legendZones}
       <span style="color:${BUY}">■ Buy</span><span style="color:${SELL}">■ Sell</span>
-      <span style="color:rgba(25,118,210,0.5)">■ 過去</span>
+      <span style="color:rgba(25,118,210,0.4)">■ 過去</span>
     </div>
   </div>`;
 }
