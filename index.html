@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
@@ -6,301 +7,365 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="GS Dashboard">
 <title>GS Derivatives Dashboard</title>
-<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-<script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js"></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-<style>*{box-sizing:border-box;margin:0;padding:0}body{background:#0e1520;font-family:'Helvetica Neue',sans-serif}button{cursor:pointer}</style>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0e1520;font-family:'Helvetica Neue',sans-serif;color:#fff;min-height:100vh;padding:12px}
+button{cursor:pointer;border:none;border-radius:6px;padding:5px 11px;font-size:11px}
+.card{border-radius:8px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,0.5);margin-bottom:12px}
+.card-header{padding:5px 10px;font-size:10px;font-weight:700;color:#fff}
+.chart-inner{background:#fff;padding:10px 6px}
+.row{display:grid;height:11px}
+.row-c{display:flex;align-items:center;justify-content:center;font-size:7px;color:#555}
+.bar-wrap{position:relative;overflow:hidden}
+.tip{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border:1px solid #bbb;border-radius:8px;padding:10px 14px;font-size:12px;z-index:999;box-shadow:0 4px 12px rgba(0,0,0,0.15);pointer-events:none;color:#333;display:none}
+</style>
 </head>
 <body>
-<div id="root"></div>
-<script type="text/babel">
-const {useState,useEffect}=React;
-const {BarChart,Bar,XAxis,YAxis,CartesianGrid,Tooltip,ResponsiveContainer,ReferenceLine,Cell,LineChart,Line}=Recharts;
-const BUY="#1976d2",SELL="#d32f2f",LC="#e3f2fd",LP="#fce4ec";
-const ATM_LINE=54000,DISCLOSE_FROM=53125;
-const JSON_URL="https://hiroshindoh.github.io/jpx-gs-tracker/gs_data.json";
+<div id="app"></div>
+<div class="tip" id="tip"></div>
 
-const FALLBACK_OI={date:"2026-03-13",gs:[
-  {strike:54000,type:"CALL",side:"Buy",qty:150},
-  {strike:54000,type:"PUT",side:"Buy",qty:196},
-  {strike:53500,type:"PUT",side:"Buy",qty:12},
-  {strike:53375,type:"PUT",side:"Sell",qty:6},
-],strikes:{min:53125,max:54125}};
+<script>
+const JSON_URL = "https://hiroshindoh.github.io/jpx-gs-tracker/gs_data.json";
+const BUY = "#1976d2", SELL = "#d32f2f";
+const ATM_LINE = 54000, DISCLOSE_FROM = 53125;
 
-const FUTURES_OI=[
+const FALLBACK_OI = {
+  date:"2026-03-13",
+  gs:[
+    {strike:54000,type:"CALL",side:"Buy",qty:150},
+    {strike:54000,type:"PUT",side:"Buy",qty:196},
+    {strike:53500,type:"PUT",side:"Buy",qty:12},
+    {strike:53375,type:"PUT",side:"Sell",qty:6},
+  ],
+  strikes:{min:53125,max:54125}
+};
+
+const FUTURES_OI = [
   {name:"LARGE 2606",value:-10020},{name:"LARGE 2609",value:27},
   {name:"MINI 2604",value:500},{name:"MINI 2605",value:0},
   {name:"MINI 2606",value:0},{name:"TOPIX 2606",value:-56545},{name:"TOPIX 2609",value:-600},
 ];
 
-const OPTION_VOL_DATA=[51000,51125,51250,51375,51500,51625,51750,51875,52000,52125,52250,52375,52500,52625,52750,52875,53000,53125,53250,53375,53500,53625,53750,53875,54000,54125,54250,54375,54500,54625,54750,54875,55000,55125,55250,55375,55500,55625,55750,55875,56000].map(s=>({strike:s,callVol:0,putVol:s===51000?25:0}));
+const STRIKES = [];
+for(let s=51000;s<=56000;s+=125) STRIKES.push(s);
+
+let liveData = null;
+let currentTab = "all";
 
 function buildSnapshot(oi){
-  const mn=oi.strikes?.min||51000,mx=oi.strikes?.max||56000,map={};
-  for(let s=50000;s<=57000;s+=125) map[s]={strike:s,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:s>=mn&&s<=mx};
+  const mn=oi.strikes?.min||51000, mx=oi.strikes?.max||56000, map={};
+  for(let s=50000;s<=57000;s+=125)
+    map[s]={strike:s,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:s>=mn&&s<=mx};
   (oi.gs||[]).forEach(d=>{
     if(!map[d.strike]) map[d.strike]={strike:d.strike,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:true};
-    if(d.type==="CALL"&&d.side==="Buy") map[d.strike].callBuy=d.qty;
+    if(d.type==="CALL"&&d.side==="Buy")  map[d.strike].callBuy=d.qty;
     if(d.type==="CALL"&&d.side==="Sell") map[d.strike].callSell=d.qty;
-    if(d.type==="PUT"&&d.side==="Buy") map[d.strike].putBuy=d.qty;
-    if(d.type==="PUT"&&d.side==="Sell") map[d.strike].putSell=d.qty;
+    if(d.type==="PUT" &&d.side==="Buy")  map[d.strike].putBuy=d.qty;
+    if(d.type==="PUT" &&d.side==="Sell") map[d.strike].putSell=d.qty;
   });
   return map;
 }
 
-function Chart1({liveData}){
-  const [tip,setTip]=useState(null);
-  const cur=liveData?.oi||FALLBACK_OI;
-  const lmap=buildSnapshot(cur);
-  const cd=Object.values(lmap).sort((a,b)=>a.strike-b.strike);
-  const hist=liveData?.oi_history||[];
-  const ld=cur?.date||"";
-  const old=hist.filter(h=>h.date!==ld).map(h=>({date:h.date,map:buildSnapshot(h)}));
-  const ct=cd.reduce((s,d)=>s+d.callBuy,0),pt=cd.reduce((s,d)=>s+d.putBuy,0);
-  const pcr=(ct+pt)>0?(pt/(ct+pt)*100).toFixed(2):"0.00";
-  const data=[...cd].reverse(),MAX=200,RH=11;
-  const dmn=cur?.strikes?.min||DISCLOSE_FROM,dmx=cur?.strikes?.max||54125;
+function showTip(strike, buyLabel, buyVal, sellLabel, sellVal){
+  const tip = document.getElementById("tip");
+  tip.innerHTML = `<b>${strike.toLocaleString()}円</b><br><span style="color:${BUY}">${buyLabel}: ${buyVal}枚</span><br><span style="color:${SELL}">${sellLabel}: ${sellVal}枚</span>`;
+  tip.style.display = "block";
+}
+function hideTip(){ document.getElementById("tip").style.display = "none"; }
+
+function makeChart1(){
+  const cur = liveData?.oi || FALLBACK_OI;
+  const lmap = buildSnapshot(cur);
+  const cd = Object.values(lmap).sort((a,b)=>a.strike-b.strike);
+  const hist = liveData?.oi_history || [];
+  const ld = cur?.date || "";
+  const old = hist.filter(h=>h.date!==ld).map(h=>({date:h.date,map:buildSnapshot(h)}));
+  const ct = cd.reduce((s,d)=>s+d.callBuy,0);
+  const pt = cd.reduce((s,d)=>s+d.putBuy,0);
+  const pcr = (ct+pt)>0 ? (pt/(ct+pt)*100).toFixed(2) : "0.00";
+  const data = [...cd].reverse();
+  const MAX=200, RH=11;
+  const dmn=cur?.strikes?.min||DISCLOSE_FROM, dmx=cur?.strikes?.max||54125;
   const dl=ld.length>=10?ld.slice(5).replace("-","/"):"03/13";
-  return (
-    <div style={{background:"#fff",padding:"10px 6px",position:"relative"}} onMouseLeave={()=>setTip(null)}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:3}}>
-        <div><div style={{fontWeight:700,fontSize:12}}>Goldman_Sachs_Japan_CoLtd</div><div style={{fontSize:11,color:"#555"}}>2026年 04月限 建玉残高</div></div>
-        {(ct+pt)>0&&(()=>{
-          const r=22,cx=28,cy=30,tot=ct+pt,a=(ct/tot)*2*Math.PI;
-          const x1=cx+r*Math.sin(a),y1=cy-r*Math.cos(a),lg=a>Math.PI?1:0,lr=r*0.58;
-          const clx=cx+lr*Math.sin(a/2),cly=cy-lr*Math.cos(a/2);
-          const pm=a+(2*Math.PI-a)/2,plx=cx+lr*Math.sin(pm),ply=cy-lr*Math.cos(pm);
-          return <svg width={115} height={62} viewBox="0 0 115 62">
-            <circle cx={cx} cy={cy} r={r} fill="#f5a623"/>
-            <path d={`M${cx},${cy} L${cx},${cy-r} A${r},${r} 0 ${lg},1 ${x1},${y1} Z`} fill="#5b9bd5"/>
-            <text x={clx} y={cly-5} textAnchor="middle" fontSize={7} fill="#fff">call</text>
-            <text x={clx} y={cly+5} textAnchor="middle" fontSize={9} fontWeight={700} fill="#fff">{ct}</text>
-            <text x={plx} y={ply-5} textAnchor="middle" fontSize={7} fill="#fff">put</text>
-            <text x={plx} y={ply+5} textAnchor="middle" fontSize={9} fontWeight={700} fill="#fff">{pt}</text>
-            <text x={60} y={22} fontSize={8} fontWeight={700} fill="#555">PCR</text>
-            <text x={60} y={36} fontSize={12} fontWeight={700} fill="#1976d2">{pcr}%</text>
-          </svg>;
-        })()}
+
+  // Pie chart SVG
+  let pieHTML = "";
+  if(ct+pt>0){
+    const r=22,cx=28,cy=30,tot=ct+pt,a=(ct/tot)*2*Math.PI;
+    const x1=cx+r*Math.sin(a),y1=cy-r*Math.cos(a),lg=a>Math.PI?1:0,lr=r*0.58;
+    const clx=cx+lr*Math.sin(a/2),cly=cy-lr*Math.cos(a/2);
+    const pm=a+(2*Math.PI-a)/2,plx=cx+lr*Math.sin(pm),ply=cy-lr*Math.cos(pm);
+    pieHTML = `<svg width="115" height="62" viewBox="0 0 115 62">
+      <circle cx="${cx}" cy="${cy}" r="${r}" fill="#f5a623"/>
+      <path d="M${cx},${cy} L${cx},${cy-r} A${r},${r} 0 ${lg},1 ${x1},${y1} Z" fill="#5b9bd5"/>
+      <text x="${clx}" y="${cly-5}" text-anchor="middle" font-size="7" fill="#fff">call</text>
+      <text x="${clx}" y="${cly+5}" text-anchor="middle" font-size="9" font-weight="700" fill="#fff">${ct}</text>
+      <text x="${plx}" y="${ply-5}" text-anchor="middle" font-size="7" fill="#fff">put</text>
+      <text x="${plx}" y="${ply+5}" text-anchor="middle" font-size="9" font-weight="700" fill="#fff">${pt}</text>
+      <text x="60" y="22" font-size="8" font-weight="700" fill="#555">PCR</text>
+      <text x="60" y="36" font-size="12" font-weight="700" fill="${BUY}">${pcr}%</text>
+    </svg>`;
+  }
+
+  let rowsHTML = "";
+  data.forEach(d=>{
+    const isAtm=d.strike===ATM_LINE, BH=RH-3;
+    const bg=(d.disclosed&&d.strike>=dmn&&d.strike<=dmx)?"#fffde7":"#fff";
+    const labelTop = d.strike===dmx ? `<div style="position:absolute;left:0;top:0;z-index:10;font-size:7px;font-weight:700;color:#555;padding:1px 4px">開示範囲（${dl}）</div>` : "";
+
+    let oldBarsCall="", oldBarsPut="";
+    old.forEach(sn=>{
+      const o=sn.map[d.strike];
+      if(!o) return;
+      if(o.callBuy>0) oldBarsCall+=`<div style="position:absolute;right:0;top:1px;height:${BH}px;width:${Math.min(o.callBuy/MAX*100,100)}%;background:rgba(25,118,210,0.22)"></div>`;
+      if(o.callSell>0) oldBarsCall+=`<div style="position:absolute;right:${Math.min(o.callBuy/MAX*100,100)}%;top:1px;height:${BH}px;width:${Math.min(o.callSell/MAX*100,100)}%;background:rgba(211,47,47,0.22)"></div>`;
+      if(o.putBuy>0) oldBarsPut+=`<div style="position:absolute;left:0;top:1px;height:${BH}px;width:${Math.min(o.putBuy/MAX*100,100)}%;background:rgba(25,118,210,0.22)"></div>`;
+      if(o.putSell>0) oldBarsPut+=`<div style="position:absolute;left:${Math.min(o.putBuy/MAX*100,100)}%;top:1px;height:${BH}px;width:${Math.min(o.putSell/MAX*100,100)}%;background:rgba(211,47,47,0.22)"></div>`;
+    });
+
+    const callBuyBar = d.callBuy>0?`<div style="position:absolute;right:0;top:1px;height:${BH}px;width:${Math.min(d.callBuy/MAX*100,100)}%;background:${BUY}"></div>`:"";
+    const callSellBar = d.callSell>0?`<div style="position:absolute;right:${Math.min(d.callBuy/MAX*100,100)}%;top:1px;height:${BH}px;width:${Math.min(d.callSell/MAX*100,100)}%;background:${SELL}"></div>`:"";
+    const putBuyBar = d.putBuy>0?`<div style="position:absolute;left:0;top:1px;height:${BH}px;width:${Math.min(d.putBuy/MAX*100,100)}%;background:${BUY}"></div>`:"";
+    const putSellBar = d.putSell>0?`<div style="position:absolute;left:${Math.min(d.putBuy/MAX*100,100)}%;top:1px;height:${BH}px;width:${Math.min(d.putSell/MAX*100,100)}%;background:${SELL}"></div>`:"";
+
+    rowsHTML += `<div style="position:relative">
+      ${labelTop}
+      <div style="display:grid;grid-template-columns:1fr 68px 1fr;height:${RH}px">
+        <div style="background:${bg};position:relative;overflow:hidden;border-right:1px solid #ccc"
+          ontouchstart="showTip(${d.strike},'Buy',${d.callBuy},'Sell',${d.callSell})"
+          onmouseenter="showTip(${d.strike},'Buy',${d.callBuy},'Sell',${d.callSell})">
+          ${oldBarsCall}${callBuyBar}${callSellBar}
+        </div>
+        <div style="height:${RH}px;display:flex;align-items:center;justify-content:center;font-size:7px;font-weight:${isAtm?700:400};color:#555;background:${bg}">${d.strike.toLocaleString()}</div>
+        <div style="background:${bg};position:relative;overflow:hidden;border-left:1px solid #ccc"
+          ontouchstart="showTip(${d.strike},'Buy',${d.putBuy},'Sell',${d.putSell})"
+          onmouseenter="showTip(${d.strike},'Buy',${d.putBuy},'Sell',${d.putSell})">
+          ${oldBarsPut}${putBuyBar}${putSellBar}
+        </div>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 68px 1fr",marginBottom:2}}>
-        <div style={{display:"flex",justifyContent:"space-between",fontSize:7,color:"#888"}}>{[200,150,100,50,0].map(v=><span key={v}>{v}</span>)}</div>
-        <div/>
-        <div style={{display:"flex",justifyContent:"space-between",fontSize:7,color:"#888"}}>{[0,50,100,150,200].map(v=><span key={v}>{v}</span>)}</div>
-      </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 68px 1fr",borderBottom:"1px solid #ccc"}}>
-        <div style={{textAlign:"center",background:"#f5f5f5",fontSize:11,fontWeight:700,padding:"3px 0"}}>CALL</div>
-        <div style={{background:"#f5f5f5"}}/>
-        <div style={{textAlign:"center",background:"#f5f5f5",fontSize:11,fontWeight:700,padding:"3px 0"}}>PUT</div>
-      </div>
-      {data.map(d=>{
-        const isAtm=d.strike===ATM_LINE,BH=RH-3;
-        const bg=(d.disclosed&&d.strike>=dmn&&d.strike<=dmx)?"#fffde7":"#fff";
-        return <div key={d.strike} style={{position:"relative"}}>
-          {d.strike===dmx&&<div style={{position:"absolute",left:0,top:0,zIndex:10,fontSize:7,fontWeight:700,color:"#555",padding:"1px 4px",pointerEvents:"none"}}>開示範囲（{dl}）</div>}
-          <div style={{display:"grid",gridTemplateColumns:"1fr 68px 1fr",height:RH}}>
-            <div style={{background:bg,position:"relative",overflow:"hidden",cursor:"pointer",borderRight:"1px solid #ccc"}} onMouseEnter={()=>setTip({strike:d.strike,buy:d.callBuy,sell:d.callSell,side:"CALL"})}>
-              {old.map(sn=>{const o=sn.map[d.strike];if(!o)return null;return <div key={sn.date}>{o.callBuy>0&&<div style={{position:"absolute",right:0,top:1,height:BH,width:`${Math.min(o.callBuy/MAX*100,100)}%`,background:"rgba(25,118,210,0.22)"}}/>}{o.callSell>0&&<div style={{position:"absolute",right:`${Math.min(o.callBuy/MAX*100,100)}%`,top:1,height:BH,width:`${Math.min(o.callSell/MAX*100,100)}%`,background:"rgba(211,47,47,0.22)"}}/>}</div>;})}
-              {d.callBuy>0&&<div style={{position:"absolute",right:0,top:1,height:BH,width:`${Math.min(d.callBuy/MAX*100,100)}%`,background:BUY}}/>}
-              {d.callSell>0&&<div style={{position:"absolute",right:`${Math.min(d.callBuy/MAX*100,100)}%`,top:1,height:BH,width:`${Math.min(d.callSell/MAX*100,100)}%`,background:SELL}}/>}
-            </div>
-            <div style={{height:RH,display:"flex",alignItems:"center",justifyContent:"center",fontSize:7,fontWeight:isAtm?700:400,color:"#555",background:bg}}>{d.strike.toLocaleString()}</div>
-            <div style={{background:bg,position:"relative",overflow:"hidden",cursor:"pointer",borderLeft:"1px solid #ccc"}} onMouseEnter={()=>setTip({strike:d.strike,buy:d.putBuy,sell:d.putSell,side:"PUT"})}>
-              {old.map(sn=>{const o=sn.map[d.strike];if(!o)return null;return <div key={sn.date}>{o.putBuy>0&&<div style={{position:"absolute",left:0,top:1,height:BH,width:`${Math.min(o.putBuy/MAX*100,100)}%`,background:"rgba(25,118,210,0.22)"}}/>}{o.putSell>0&&<div style={{position:"absolute",left:`${Math.min(o.putBuy/MAX*100,100)}%`,top:1,height:BH,width:`${Math.min(o.putSell/MAX*100,100)}%`,background:"rgba(211,47,47,0.22)"}}/>}</div>;})}
-              {d.putBuy>0&&<div style={{position:"absolute",left:0,top:1,height:BH,width:`${Math.min(d.putBuy/MAX*100,100)}%`,background:BUY}}/>}
-              {d.putSell>0&&<div style={{position:"absolute",left:`${Math.min(d.putBuy/MAX*100,100)}%`,top:1,height:BH,width:`${Math.min(d.putSell/MAX*100,100)}%`,background:SELL}}/>}
-            </div>
-          </div>
-        </div>;
-      })}
-      {tip&&<div style={{position:"fixed",top:"50%",left:"50%",transform:"translate(-50%,-50%)",background:"#fff",border:"1px solid #bbb",borderRadius:8,padding:"10px 14px",fontSize:12,zIndex:999,boxShadow:"0 4px 12px rgba(0,0,0,0.15)",pointerEvents:"none"}}>
-        <div style={{fontWeight:700,marginBottom:4}}>{tip.strike.toLocaleString()}円</div>
-        <div style={{color:BUY}}>Buy: {tip.buy??0}枚</div><div style={{color:SELL}}>Sell: {tip.sell??0}枚</div>
-      </div>}
-      <div style={{marginTop:5,padding:"4px 8px",background:"#f5f5f5",borderRadius:4,fontSize:8,display:"flex",gap:8,flexWrap:"wrap"}}>
-        <span><span style={{display:"inline-block",width:12,height:9,background:"#fffde7",border:"1px solid #ccc"}}/> 開示範囲</span>
-        <span style={{color:BUY}}>■ Buy</span><span style={{color:SELL}}>■ Sell</span>
-        <span style={{color:"rgba(25,118,210,0.5)"}}>■ 過去</span>
-      </div>
+    </div>`;
+  });
+
+  return `<div class="chart-inner" ontouchend="hideTip()" onmouseleave="hideTip()">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:3px">
+      <div><div style="font-weight:700;font-size:12px">Goldman_Sachs_Japan_CoLtd</div>
+      <div style="font-size:11px;color:#555">2026年 04月限 建玉残高</div></div>
+      ${pieHTML}
     </div>
-  );
+    <div style="display:grid;grid-template-columns:1fr 68px 1fr;margin-bottom:2px">
+      <div style="display:flex;justify-content:space-between;font-size:7px;color:#888"><span>200</span><span>150</span><span>100</span><span>50</span><span>0</span></div>
+      <div></div>
+      <div style="display:flex;justify-content:space-between;font-size:7px;color:#888"><span>0</span><span>50</span><span>100</span><span>150</span><span>200</span></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 68px 1fr;border-bottom:1px solid #ccc">
+      <div style="text-align:center;background:#f5f5f5;font-size:11px;font-weight:700;padding:3px 0">CALL</div>
+      <div style="background:#f5f5f5"></div>
+      <div style="text-align:center;background:#f5f5f5;font-size:11px;font-weight:700;padding:3px 0">PUT</div>
+    </div>
+    ${rowsHTML}
+    <div style="margin-top:5px;padding:4px 8px;background:#f5f5f5;border-radius:4px;font-size:8px;display:flex;gap:8px;flex-wrap:wrap">
+      <span><span style="display:inline-block;width:12px;height:9px;background:#fffde7;border:1px solid #ccc"></span> 開示範囲</span>
+      <span style="color:${BUY}">■ Buy</span><span style="color:${SELL}">■ Sell</span>
+      <span style="color:rgba(25,118,210,0.5)">■ 過去</span>
+    </div>
+  </div>`;
 }
 
-function Chart2({liveData}){
-  const [tip,setTip]=useState(null);
-  const bvd=()=>{
-    if(!liveData?.vol?.gs?.length) return OPTION_VOL_DATA;
+function makeChart2(){
+  let vd;
+  if(liveData?.vol?.gs?.length){
     const opts=liveData.vol.gs.filter(d=>d.type==="CALL"||d.type==="PUT");
-    if(!opts.length) return OPTION_VOL_DATA;
-    const ss=new Set(opts.map(d=>d.strike).filter(Boolean));
-    const mn=liveData.oi?.strikes?.min||51000,mx=liveData.oi?.strikes?.max||56000;
-    for(let s=mn;s<=mx;s+=125) ss.add(s);
-    const m={};ss.forEach(s=>{m[s]={strike:s,callVol:0,putVol:0};});
-    opts.forEach(d=>{if(!m[d.strike])m[d.strike]={strike:d.strike,callVol:0,putVol:0};if(d.type==="CALL")m[d.strike].callVol+=d.volume;else m[d.strike].putVol+=d.volume;});
-    return Object.values(m).sort((a,b)=>a.strike-b.strike);
-  };
-  const vd=bvd(),data=[...vd].reverse();
+    if(opts.length){
+      const ss=new Set(opts.map(d=>d.strike).filter(Boolean));
+      const mn=liveData.oi?.strikes?.min||51000,mx=liveData.oi?.strikes?.max||56000;
+      for(let s=mn;s<=mx;s+=125) ss.add(s);
+      const m={};
+      ss.forEach(s=>{m[s]={strike:s,callVol:0,putVol:0};});
+      opts.forEach(d=>{if(!m[d.strike])m[d.strike]={strike:d.strike,callVol:0,putVol:0};if(d.type==="CALL")m[d.strike].callVol+=d.volume;else m[d.strike].putVol+=d.volume;});
+      vd=Object.values(m).sort((a,b)=>a.strike-b.strike);
+    }
+  }
+  if(!vd) vd=STRIKES.map(s=>({strike:s,callVol:0,putVol:s===51000?25:0}));
+  const data=[...vd].reverse();
   const pt=vd.reduce((s,d)=>s+d.putVol,0),ct=vd.reduce((s,d)=>s+d.callVol,0);
   const pcr=ct===0?"100.00":(pt/(ct+pt)*100).toFixed(2);
   const MAX=Math.max(...vd.map(d=>Math.max(d.callVol,d.putVol)),10),RH=13;
   const vdate=liveData?.vol?.date||"";
-  return (
-    <div style={{background:"#fff",padding:"10px 6px",position:"relative"}} onMouseLeave={()=>setTip(null)}>
-      <div style={{fontWeight:700,fontSize:12,textAlign:"center"}}>Goldman_Sachs_Japan_CoLtd</div>
-      <div style={{fontSize:11,textAlign:"center",color:"#555",marginBottom:1}}>2026年 04月限 本日の取引量{vdate?`（${vdate}）`:""}</div>
-      <div style={{background:"#ffebee",border:"2px solid #e53935",borderRadius:6,padding:"5px 8px",textAlign:"center",fontSize:11,fontWeight:700,color:"#c62828",margin:"4px 0"}}>売りか買いかは分かりません</div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 64px 1fr",marginBottom:2}}>
-        <div style={{display:"flex",justifyContent:"space-between",fontSize:7,color:"#888"}}>{[MAX,Math.round(MAX*0.5),0].map(v=><span key={v}>{v}</span>)}</div>
-        <div/><div style={{display:"flex",justifyContent:"space-between",fontSize:7,color:"#888"}}>{[0,Math.round(MAX*0.5),MAX].map(v=><span key={v}>{v}</span>)}</div>
+
+  let rowsHTML="";
+  data.forEach(d=>{
+    const hc=d.callVol>0,hp=d.putVol>0,act=hc||hp;
+    rowsHTML+=`<div style="display:grid;grid-template-columns:1fr 64px 1fr;height:${RH}px">
+      <div style="background:#fce8e8;position:relative;overflow:hidden"
+        ontouchstart="showTip(${d.strike},'CALL',${d.callVol},'PUT',${d.putVol})"
+        onmouseenter="showTip(${d.strike},'CALL',${d.callVol},'PUT',${d.putVol})">
+        ${hc?`<div style="position:absolute;right:0;top:1px;height:${RH-2}px;width:${Math.min(d.callVol/MAX*100,100)}%;background:#5b9bd5"></div>`:""}
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 64px 1fr",borderBottom:"1px solid #ccc"}}>
-        <div style={{textAlign:"center",background:LC,fontSize:11,fontWeight:700,padding:"3px 0"}}>CALL</div>
-        <div style={{background:"#f5f5f5",display:"flex",alignItems:"center",justifyContent:"center",fontSize:8,color:"#555"}}>strike</div>
-        <div style={{textAlign:"center",background:LP,fontSize:11,fontWeight:700,padding:"3px 0"}}>PUT(PCR:{pcr}%)</div>
+      <div style="height:${RH}px;display:flex;align-items:center;justify-content:center;font-size:${act?9:7}px;font-weight:${act?700:400};color:${act?"#e65100":"#777"};background:${act?"#fff3e0":"#f9f9f9"}">${d.strike.toLocaleString()}</div>
+      <div style="background:#e8f4fd;position:relative;overflow:hidden"
+        ontouchstart="showTip(${d.strike},'CALL',${d.callVol},'PUT',${d.putVol})"
+        onmouseenter="showTip(${d.strike},'CALL',${d.callVol},'PUT',${d.putVol})">
+        ${hp?`<div style="position:absolute;left:0;top:1px;height:${RH-2}px;width:${Math.min(d.putVol/MAX*100,100)}%;background:${SELL}"></div>`:""}
       </div>
-      {data.map(d=>{
-        const hc=d.callVol>0,hp=d.putVol>0,act=hc||hp;
-        return <div key={d.strike} style={{display:"grid",gridTemplateColumns:"1fr 64px 1fr",height:RH}}>
-          <div style={{background:"#fce8e8",position:"relative",overflow:"hidden",cursor:"pointer"}} onMouseEnter={()=>setTip({strike:d.strike,call:d.callVol,put:d.putVol})}>
-            {hc&&<div style={{position:"absolute",right:0,top:1,height:RH-2,width:`${Math.min(d.callVol/MAX*100,100)}%`,background:"#5b9bd5"}}/>}
-          </div>
-          <div style={{height:RH,display:"flex",alignItems:"center",justifyContent:"center",fontSize:act?9:7,fontWeight:act?700:400,color:act?"#e65100":"#777",background:act?"#fff3e0":"#f9f9f9"}}>{d.strike.toLocaleString()}</div>
-          <div style={{background:"#e8f4fd",position:"relative",overflow:"hidden",cursor:"pointer"}} onMouseEnter={()=>setTip({strike:d.strike,call:d.callVol,put:d.putVol})}>
-            {hp&&<div style={{position:"absolute",left:0,top:1,height:RH-2,width:`${Math.min(d.putVol/MAX*100,100)}%`,background:SELL}}/>}
-          </div>
-        </div>;
-      })}
-      {tip&&<div style={{position:"fixed",top:"50%",left:"50%",transform:"translate(-50%,-50%)",background:"#fff",border:"1px solid #bbb",borderRadius:8,padding:"10px 14px",fontSize:12,zIndex:999,boxShadow:"0 4px 12px rgba(0,0,0,0.15)",pointerEvents:"none"}}>
-        <div style={{fontWeight:700,marginBottom:4}}>{tip.strike.toLocaleString()}円</div>
-        <div style={{color:"#5b9bd5"}}>CALL:{tip.call??0}枚</div><div style={{color:SELL}}>PUT:{tip.put??0}枚</div>
-      </div>}
+    </div>`;
+  });
+
+  return `<div class="chart-inner" ontouchend="hideTip()" onmouseleave="hideTip()">
+    <div style="font-weight:700;font-size:12px;text-align:center">Goldman_Sachs_Japan_CoLtd</div>
+    <div style="font-size:11px;text-align:center;color:#555;margin-bottom:1px">2026年 04月限 本日の取引量${vdate?"（"+vdate+"）":""}</div>
+    <div style="background:#ffebee;border:2px solid #e53935;border-radius:6px;padding:5px 8px;text-align:center;font-size:11px;font-weight:700;color:#c62828;margin:4px 0">売りか買いかは分かりません</div>
+    <div style="display:grid;grid-template-columns:1fr 64px 1fr;margin-bottom:2px">
+      <div style="display:flex;justify-content:space-between;font-size:7px;color:#888"><span>${MAX}</span><span>${Math.round(MAX*0.5)}</span><span>0</span></div>
+      <div></div>
+      <div style="display:flex;justify-content:space-between;font-size:7px;color:#888"><span>0</span><span>${Math.round(MAX*0.5)}</span><span>${MAX}</span></div>
     </div>
-  );
+    <div style="display:grid;grid-template-columns:1fr 64px 1fr;border-bottom:1px solid #ccc">
+      <div style="text-align:center;background:#e3f2fd;font-size:11px;font-weight:700;padding:3px 0">CALL</div>
+      <div style="background:#f5f5f5;display:flex;align-items:center;justify-content:center;font-size:8px;color:#555">strike</div>
+      <div style="text-align:center;background:#fce4ec;font-size:11px;font-weight:700;padding:3px 0">PUT(PCR:${pcr}%)</div>
+    </div>
+    ${rowsHTML}
+  </div>`;
 }
 
-const SDEF=[
-  {key:"L6",label:"ラージ期近(6月)",color:"#ef5350",dash:""},
-  {key:"L9",label:"ラージ期先(9月)",color:"#ef5350",dash:"4 3"},
-  {key:"T6",label:"TPX期近(6月)",color:"#43a047",dash:""},
-  {key:"T9",label:"TPX期先(9月)",color:"#43a047",dash:"4 3"},
-  {key:"M4",label:"ミニ期近(4月)",color:"#ff9800",dash:""},
-  {key:"M5",label:"ミニ期先(5月)",color:"#ff9800",dash:"4 3"},
-  {key:"M6",label:"ミニ期先先(6月)",color:"#ff9800",dash:"2 2"},
-];
+function makeChart3(){
+  const hist=liveData?.history||{}, dates=Object.keys(hist).sort();
+  if(!dates.length) return `<div style="background:#1a1a2e;padding:24px;color:#888;text-align:center">
+    <div style="font-size:13px;color:#fff;margin-bottom:8px">GSAX 先物取引量 時系列</div>
+    <div style="font-size:11px">データ蓄積中... ⏳<br>毎営業日16:00に自動追加されます</div>
+  </div>`;
 
-function Chart3({liveData}){
-  const hist=liveData?.history||{},dates=Object.keys(hist).sort();
-  if(!dates.length) return <div style={{background:"#1a1a2e",padding:24,color:"#888",textAlign:"center"}}>
-    <div style={{fontSize:13,color:"#fff",marginBottom:8}}>GSAX 先物取引量 時系列</div>
-    <div style={{fontSize:11}}>データ蓄積中... ⏳<br/>毎営業日16:00に自動追加されます</div>
-  </div>;
-  const cd=dates.map(date=>({d:date.slice(5).replace("-","/"),date,...hist[date]}));
   const ld=dates[dates.length-1];
-  return (
-    <div style={{background:"#1a1a2e",padding:"10px 6px",color:"#fff"}}>
-      <div style={{fontWeight:700,fontSize:13,marginBottom:2}}>GSAX 先物取引量　{ld}現在</div>
-      <div style={{fontSize:8,color:"#445",marginBottom:4}}>※JPX日次データより自動集計（{dates.length}営業日分）</div>
-      {SDEF.map(s=>{
-        const vals=cd.map(d=>d[s.key]??0),maxV=Math.max(...vals,1),last=hist[ld]?.[s.key]??0;
-        if(maxV<=1) return null;
-        return <div key={s.key} style={{marginBottom:1}}>
-          <div style={{display:"flex",alignItems:"center"}}>
-            <div style={{width:38,fontSize:7,color:s.color,textAlign:"right",paddingRight:3,flexShrink:0}}>{maxV.toLocaleString()}-</div>
-            <div style={{flex:1,borderBottom:"1px solid #2a3a50"}}>
-              <div style={{fontSize:7,color:"#556",paddingLeft:2}}>{s.label}</div>
-              <ResponsiveContainer width="100%" height={36}>
-                <LineChart data={cd} margin={{left:0,right:0,top:2,bottom:0}}>
-                  <XAxis dataKey="d" hide/><YAxis domain={[0,maxV]} hide/>
-                  <Tooltip contentStyle={{background:"#222",border:"none",color:"#fff",fontSize:9}} formatter={v=>[v?.toLocaleString()+"枚",s.label]} labelFormatter={l=>cd.find(d=>d.d===l)?.date||l}/>
-                  <Line type="monotone" dataKey={s.key} stroke={s.color} strokeDasharray={s.dash} strokeWidth={1.5} dot={false} connectNulls/>
-                </LineChart>
-              </ResponsiveContainer>
-              <div style={{fontSize:7,color:"#556",paddingLeft:2}}>0-</div>
-            </div>
-            <div style={{width:44,textAlign:"right",fontSize:10,color:last>0?s.color:"#444",fontWeight:700,paddingLeft:3,flexShrink:0}}>{last>0?last.toLocaleString():"-"}</div>
-          </div>
-        </div>;
-      })}
-      <ResponsiveContainer width="100%" height={16}>
-        <LineChart data={cd} margin={{left:38,right:44,top:0,bottom:0}}>
-          <XAxis dataKey="d" tick={{fontSize:7,fill:"#888"}} interval={Math.max(0,Math.floor(dates.length/8)-1)} axisLine={false} tickLine={false}/>
-        </LineChart>
-      </ResponsiveContainer>
-    </div>
-  );
-}
+  const SDEF=[
+    {key:"L6",label:"ラージ期近(6月)",color:"#ef5350"},
+    {key:"L9",label:"ラージ期先(9月)",color:"#ef5350"},
+    {key:"T6",label:"TPX期近(6月)",color:"#43a047"},
+    {key:"T9",label:"TPX期先(9月)",color:"#43a047"},
+    {key:"M4",label:"ミニ期近(4月)",color:"#ff9800"},
+    {key:"M5",label:"ミニ期先(5月)",color:"#ff9800"},
+    {key:"M6",label:"ミニ期先先(6月)",color:"#ff9800"},
+  ];
 
-function Chart4(){
-  const OITip=({active,payload})=>{if(!active||!payload?.length)return null;const v=payload[0]?.value??0;return <div style={{background:"#fff",border:"1px solid #bbb",padding:"7px 10px",borderRadius:6,fontSize:11}}><div style={{color:v>0?BUY:v<0?SELL:"#888",fontWeight:700}}>{v>0?"+":""}{v.toLocaleString()}枚</div></div>;};
-  return (
-    <div style={{background:"#fff",padding:"10px 6px"}}>
-      <div style={{fontWeight:700,fontSize:11,textAlign:"center"}}>Goldman_Sachs_Japan_CoLtd — 2026-03-21</div>
-      <div style={{fontSize:10,textAlign:"center",color:"#555",marginBottom:6}}>225 Futures Position（売越=マイナス/買越=プラス）</div>
-      <ResponsiveContainer width="100%" height={300}>
-        <BarChart data={FUTURES_OI} margin={{left:20,right:20,top:16,bottom:20}}>
-          <CartesianGrid strokeDasharray="2 4" stroke="#eee"/>
-          <XAxis dataKey="name" tick={{fontSize:9}}/><YAxis tick={{fontSize:9}} tickFormatter={v=>v.toLocaleString()}/>
-          <ReferenceLine y={0} stroke="#333" strokeWidth={2}/>
-          <Tooltip content={<OITip/>}/>
-          <Bar dataKey="value" radius={[3,3,0,0]} label={{position:"top",fontSize:9,formatter:v=>v!==0?(v>0?"+":"")+v.toLocaleString():"0"}}>
-            {FUTURES_OI.map((d,i)=><Cell key={i} fill={d.value>0?BUY:d.value<0?SELL:"#bbb"}/>)}
-          </Bar>
-        </BarChart>
-      </ResponsiveContainer>
-      <div style={{display:"flex",justifyContent:"center",gap:20,fontSize:10}}>
-        <span style={{color:SELL}}>■ 売り越し</span><span style={{color:BUY}}>■ 買い越し</span>
-      </div>
-    </div>
-  );
-}
-
-function App(){
-  const [tab,setTab]=useState("all");
-  const [ld,setLd]=useState(null);
-  const [loading,setLoading]=useState(true);
-  const [upd,setUpd]=useState("");
-  useEffect(()=>{
-    fetch(JSON_URL+"?t="+Date.now()).then(r=>r.json()).then(j=>{setLd(j);setUpd(j.updated||"");setLoading(false);}).catch(()=>setLoading(false));
-  },[]);
-  const tabs=[{id:"all",label:"全グラフ"},{id:"c1",label:"①建玉残高"},{id:"c2",label:"②取引量"},{id:"c3",label:"③時系列"},{id:"c4",label:"④先物建玉"}];
-  const show=id=>tab==="all"||tab===id;
-  return (
-    <div style={{fontFamily:"'Helvetica Neue',sans-serif",background:"#0e1520",minHeight:"100vh",padding:12}}>
-      <div style={{textAlign:"center",marginBottom:12}}>
-        <div style={{fontSize:10,letterSpacing:2,color:"#00d4ff",border:"1px solid #00d4ff33",borderRadius:20,display:"inline-block",padding:"2px 14px",marginBottom:6}}>GS DERIVATIVES DASHBOARD · JPX自動取得</div>
-        <h1 style={{margin:0,fontSize:16,fontWeight:700,background:"linear-gradient(90deg,#00d4ff,#fff,#ff3d6b)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>Goldman Sachs — 日経225 先物・オプション 建玉分析</h1>
-        <div style={{marginTop:4,fontSize:10,display:"flex",justifyContent:"center",alignItems:"center",gap:8}}>
-          {loading?<span style={{color:"#ffb74d"}}>⏳ データ取得中...</span>
-          :ld?<><span style={{color:"#00e676"}}>✅ 自動取得データ</span><span style={{color:"#4a6080"}}>|</span><span style={{color:"#4a6060"}}>更新:{upd}</span></>
-          :<span style={{color:"#ff5252"}}>⚠️ 取得失敗</span>}
+  let seriesHTML="";
+  SDEF.forEach(s=>{
+    const vals=dates.map(d=>hist[d][s.key]||0);
+    const maxV=Math.max(...vals,1), last=hist[ld][s.key]||0;
+    if(maxV<=1) return;
+    const W=300, H=36;
+    const pts=vals.map((v,i)=>{
+      const x=dates.length>1?i/(dates.length-1)*W:W/2;
+      const y=H-(v/maxV)*(H-4)-2;
+      return `${x},${y}`;
+    }).join(" ");
+    seriesHTML+=`<div style="margin-bottom:1px">
+      <div style="display:flex;align-items:center">
+        <div style="width:38px;font-size:7px;color:${s.color};text-align:right;padding-right:3px;flex-shrink:0">${maxV.toLocaleString()}-</div>
+        <div style="flex:1;border-bottom:1px solid #2a3a50">
+          <div style="font-size:7px;color:#556;padding-left:2px">${s.label}</div>
+          <svg width="100%" height="${H}" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+            <polyline points="${pts}" fill="none" stroke="${s.color}" stroke-width="1.5"/>
+          </svg>
+          <div style="font-size:7px;color:#556;padding-left:2px">0-</div>
         </div>
+        <div style="width:44px;text-align:right;font-size:10px;color:${last>0?s.color:"#444"};font-weight:700;padding-left:3px;flex-shrink:0">${last>0?last.toLocaleString():"-"}</div>
       </div>
-      <div style={{display:"flex",gap:4,marginBottom:12,flexWrap:"wrap"}}>
-        {tabs.map(t=><button key={t.id} onClick={()=>setTab(t.id)} style={{background:tab===t.id?"#00d4ff":"#1a2840",color:tab===t.id?"#0e1520":"#90a4ae",border:"none",borderRadius:6,padding:"5px 11px",fontSize:11,fontWeight:tab===t.id?700:400}}>{t.label}</button>)}
-      </div>
-      <div style={{display:tab==="all"?"grid":"block",gridTemplateColumns:tab==="all"?"1fr 1fr":undefined,gap:12}}>
-        {show("c1")&&<div style={{borderRadius:8,overflow:"hidden",boxShadow:"0 2px 16px rgba(0,0,0,0.5)"}}>
-          <div style={{background:"#1565c0",color:"#fff",padding:"5px 10px",fontSize:10,fontWeight:700}}>① 建玉残高（行使価格別）</div>
-          <Chart1 liveData={ld}/>
-        </div>}
-        {show("c2")&&<div style={{borderRadius:8,overflow:"hidden",boxShadow:"0 2px 16px rgba(0,0,0,0.5)"}}>
-          <div style={{background:"#b71c1c",color:"#fff",padding:"5px 10px",fontSize:10,fontWeight:700}}>② 当日取引量（行使価格別）</div>
-          <Chart2 liveData={ld}/>
-        </div>}
-        {show("c3")&&<div style={{background:"#1a1a2e",borderRadius:8,overflow:"hidden",boxShadow:"0 2px 16px rgba(0,0,0,0.5)"}}>
-          <div style={{background:"#1b5e20",color:"#fff",padding:"5px 10px",fontSize:10,fontWeight:700}}>③ 先物取引量 時系列</div>
-          <Chart3 liveData={ld}/>
-        </div>}
-        {show("c4")&&<div style={{borderRadius:8,overflow:"hidden",boxShadow:"0 2px 16px rgba(0,0,0,0.5)"}}>
-          <div style={{background:"#4a148c",color:"#fff",padding:"5px 10px",fontSize:10,fontWeight:700}}>④ 先物建玉残高（限月別）</div>
-          <Chart4/>
-        </div>}
-      </div>
-      <div style={{textAlign:"center",color:"#2a4060",fontSize:9,marginTop:12}}>※ JPX公開データに基づきます。投資判断の参考情報です。</div>
-    </div>
-  );
+    </div>`;
+  });
+
+  const xLabels=dates.filter((_,i)=>i%Math.max(1,Math.floor(dates.length/6))===0).map(d=>d.slice(5).replace("-","/")).join(" &nbsp; ");
+
+  return `<div style="background:#1a1a2e;padding:10px 6px;color:#fff">
+    <div style="font-weight:700;font-size:13px;margin-bottom:2px">GSAX 先物取引量　${ld}現在</div>
+    <div style="font-size:8px;color:#445;margin-bottom:4px">※JPX日次データより自動集計（${dates.length}営業日分）</div>
+    ${seriesHTML}
+    <div style="font-size:7px;color:#888;margin-top:4px;padding-left:38px">${xLabels}</div>
+  </div>`;
 }
-ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+
+function makeChart4(){
+  const maxAbs=Math.max(...FUTURES_OI.map(d=>Math.abs(d.value)),1);
+  const W=260,H=200,pad={l:60,r:20,t:20,b:30};
+  const bw=30, spacing=(W-pad.l-pad.r)/FUTURES_OI.length;
+  const zero=pad.t+H/2;
+  let bars="",labels="";
+  FUTURES_OI.forEach((d,i)=>{
+    const x=pad.l+i*spacing+spacing/2-bw/2;
+    const barH=Math.abs(d.value)/maxAbs*(H/2-4);
+    const y=d.value>=0?zero-barH:zero;
+    const color=d.value>0?BUY:d.value<0?SELL:"#bbb";
+    const labelY=d.value>=0?y-4:y+barH+10;
+    const sign=d.value>0?"+":"";
+    bars+=`<rect x="${x}" y="${y}" width="${bw}" height="${Math.max(barH,1)}" fill="${color}" rx="2"/>`;
+    bars+=`<text x="${x+bw/2}" y="${labelY}" text-anchor="middle" font-size="8" fill="${color}">${d.value!==0?sign+d.value.toLocaleString():"0"}</text>`;
+    labels+=`<text x="${x+bw/2}" y="${pad.t+H+pad.b-5}" text-anchor="middle" font-size="7" fill="#555">${d.name}</text>`;
+  });
+  return `<div class="chart-inner">
+    <div style="font-weight:700;font-size:11px;text-align:center">Goldman_Sachs_Japan_CoLtd — 2026-03-21</div>
+    <div style="font-size:10px;text-align:center;color:#555;margin-bottom:6px">225 Futures Position（売越=マイナス/買越=プラス）</div>
+    <svg width="100%" viewBox="0 0 ${W} ${pad.t+H+pad.b}" style="overflow:visible">
+      <line x1="${pad.l}" y1="${zero}" x2="${W-pad.r}" y2="${zero}" stroke="#333" stroke-width="2"/>
+      ${bars}${labels}
+    </svg>
+    <div style="display:flex;justify-content:center;gap:20px;font-size:10px;margin-top:4px">
+      <span style="color:${SELL}">■ 売り越し</span><span style="color:${BUY}">■ 買い越し</span>
+    </div>
+  </div>`;
+}
+
+function makeHeader(loading, hasData, upd){
+  return `<div style="text-align:center;margin-bottom:12px">
+    <div style="font-size:10px;letter-spacing:2px;color:#00d4ff;border:1px solid rgba(0,212,255,0.2);border-radius:20px;display:inline-block;padding:2px 14px;margin-bottom:6px">GS DERIVATIVES DASHBOARD · JPX自動取得</div>
+    <h1 style="margin:0;font-size:16px;font-weight:700;background:linear-gradient(90deg,#00d4ff,#fff,#ff3d6b);-webkit-background-clip:text;-webkit-text-fill-color:transparent">Goldman Sachs — 日経225 先物・オプション 建玉分析</h1>
+    <div style="margin-top:4px;font-size:10px;display:flex;justify-content:center;align-items:center;gap:8px">
+      ${loading
+        ? '<span style="color:#ffb74d">⏳ データ取得中...</span>'
+        : hasData
+          ? `<span style="color:#00e676">✅ 自動取得データ</span><span style="color:#4a6080">|</span><span style="color:#4a6060">更新:${upd}</span>`
+          : '<span style="color:#ff5252">⚠️ 取得失敗</span>'}
+    </div>
+  </div>`;
+}
+
+function makeTabs(){
+  const tabs=[{id:"all",label:"全グラフ"},{id:"c1",label:"①建玉残高"},{id:"c2",label:"②取引量"},{id:"c3",label:"③時系列"},{id:"c4",label:"④先物建玉"}];
+  return `<div style="display:flex;gap:4px;margin-bottom:12px;flex-wrap:wrap">
+    ${tabs.map(t=>`<button onclick="setTab('${t.id}')" style="background:${currentTab===t.id?"#00d4ff":"#1a2840"};color:${currentTab===t.id?"#0e1520":"#90a4ae"};font-weight:${currentTab===t.id?700:400}">${t.label}</button>`).join("")}
+  </div>`;
+}
+
+function show(id){ return currentTab==="all"||currentTab===id; }
+
+function render(loading=false, upd=""){
+  const hasData = !!liveData;
+  const grid = currentTab==="all" ? "display:grid;grid-template-columns:1fr 1fr;gap:12px" : "";
+
+  const c1 = show("c1") ? `<div class="card"><div class="card-header" style="background:#1565c0">① 建玉残高（行使価格別）</div>${makeChart1()}</div>` : "";
+  const c2 = show("c2") ? `<div class="card"><div class="card-header" style="background:#b71c1c">② 当日取引量（行使価格別）</div>${makeChart2()}</div>` : "";
+  const c3 = show("c3") ? `<div class="card"><div class="card-header" style="background:#1b5e20">③ 先物取引量 時系列</div>${makeChart3()}</div>` : "";
+  const c4 = show("c4") ? `<div class="card"><div class="card-header" style="background:#4a148c">④ 先物建玉残高（限月別）</div>${makeChart4()}</div>` : "";
+
+  document.getElementById("app").innerHTML = `
+    ${makeHeader(loading, hasData, upd)}
+    ${makeTabs()}
+    <div style="${grid}">${c1}${c2}${c3}${c4}</div>
+    <div style="text-align:center;color:#2a4060;font-size:9px;margin-top:12px">※ JPX公開データに基づきます。投資判断の参考情報です。</div>
+  `;
+}
+
+function setTab(id){
+  currentTab = id;
+  render(false, liveData?.updated||"");
+}
+
+// 初期表示（ローディング中）
+render(true, "");
+
+// データ取得
+fetch(JSON_URL+"?t="+Date.now())
+  .then(r=>r.json())
+  .then(json=>{ liveData=json; render(false, json.updated||""); })
+  .catch(()=>{ render(false, ""); });
 </script>
+
 </body>
 </html>
