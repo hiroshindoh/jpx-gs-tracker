@@ -1,10 +1,12 @@
 <!DOCTYPE html>
+
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="GS Dashboard">
+
 <title>GS Derivatives Dashboard</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -381,7 +383,10 @@ function makeChart4(){
 
 function makeHeader(loading, hasData, upd){
   return `<div style="text-align:center;margin-bottom:12px">
-    <div style="font-size:10px;letter-spacing:2px;color:#00d4ff;border:1px solid rgba(0,212,255,0.2);border-radius:20px;display:inline-block;padding:2px 14px;margin-bottom:6px">GS DERIVATIVES DASHBOARD · JPX自動取得</div>
+    <div style="display:flex;justify-content:flex-end;margin-bottom:4px">
+  <button onclick="location.reload(true)" style="background:#1a2840;color:#90a4ae;border:1px solid #2a3a50;border-radius:6px;padding:4px 10px;font-size:10px">🔄 更新</button>
+</div>
+<div style="font-size:10px;letter-spacing:2px;color:#00d4ff;border:1px solid rgba(0,212,255,0.2);border-radius:20px;display:inline-block;padding:2px 14px;margin-bottom:6px">GS DERIVATIVES DASHBOARD · JPX自動取得</div>
     <h1 style="margin:0;font-size:16px;font-weight:700;background:linear-gradient(90deg,#00d4ff,#fff,#ff3d6b);-webkit-background-clip:text;-webkit-text-fill-color:transparent">Goldman Sachs — 日経225 先物・オプション 建玉分析</h1>
     <div style="margin-top:4px;font-size:10px;display:flex;justify-content:center;align-items:center;gap:8px">
       ${loading
@@ -433,5 +438,6 @@ fetch(JSON_URL+"?t="+Date.now())
   .then(json=>{ liveData=json; render(false, json.updated||""); })
   .catch(()=>{ render(false, ""); });
 </script>
+
 </body>
 </html>
