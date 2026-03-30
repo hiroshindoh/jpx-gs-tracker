@@ -1,5 +1,4 @@
 <!DOCTYPE html>
-
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
@@ -162,12 +161,15 @@ function makeChart1(){
       bg = d.zones[d.zones.length-1].color;
     }
 
-    // 各ゾーンの最上行にラベルを表示
+    // 各ゾーンの最上行にラベルを表示（重なる場合は縦にずらす）
     let labelHTML="";
     if(d.zones){
+      let labelCount=0;
       d.zones.forEach(z=>{
         if(d.strike===z.strikes?.max){
-          labelHTML+=`<div style="position:absolute;left:0;top:0;z-index:10;font-size:7px;font-weight:700;color:#333;padding:1px 4px;pointer-events:none">開示範囲（${z.label}）</div>`;
+          const topOffset = labelCount * 10;
+          labelHTML+=`<div style="position:absolute;left:0;top:${topOffset}px;z-index:${10+labelCount};font-size:7px;font-weight:700;color:#333;padding:0 4px;pointer-events:none;line-height:10px">開示範囲（${z.label}）</div>`;
+          labelCount++;
         }
       });
     }
@@ -431,6 +433,5 @@ fetch(JSON_URL+"?t="+Date.now())
   .then(json=>{ liveData=json; render(false, json.updated||""); })
   .catch(()=>{ render(false, ""); });
 </script>
-
 </body>
 </html>
