@@ -462,10 +462,38 @@ function render(loading=false, upd=""){
   const hasData = !!liveData;
   const grid = currentTab==="all" ? "display:grid;grid-template-columns:1fr 1fr;gap:12px" : "";
 
-  const c1 = show("c1") ? `<div class="card"><div class="card-header" style="background:#1565c0">① 建玉残高（行使価格別）</div>${makeChart1()}</div>` : "";
-  const c2 = show("c2") ? `<div class="card"><div class="card-header" style="background:#b71c1c">② 当日取引量（行使価格別）</div>${makeChart2()}</div>` : "";
-  const c3 = show("c3") ? `<div class="card"><div class="card-header" style="background:#1b5e20">③ 先物取引量 時系列</div>${makeChart3()}</div>` : "";
-  const c4 = show("c4") ? `<div class="card"><div class="card-header" style="background:#4a148c">④ 先物建玉残高（限月別）</div>${makeChart4()}</div>` : "";
+  let c1 = "";
+  if(show("c1")){
+    try{
+      c1 = '<div class="card"><div class="card-header" style="background:#1565c0">① 建玉残高（行使価格別）</div>' + makeChart1() + '</div>';
+    }catch(e){
+      c1 = '<div class="card"><div style="padding:16px;color:red;font-size:11px">グラフ1エラー: '+e.message+'</div></div>';
+    }
+  }
+  let c2 = "";
+  if(show("c2")){
+    try{
+      c2 = '<div class="card"><div class="card-header" style="background:#b71c1c">② 当日取引量（行使価格別）</div>' + makeChart2() + '</div>';
+    }catch(e){
+      c2 = '<div class="card"><div style="padding:16px;color:red;font-size:11px">グラフ2エラー: '+e.message+'</div></div>';
+    }
+  }
+  let c3 = "";
+  if(show("c3")){
+    try{
+      c3 = '<div class="card"><div class="card-header" style="background:#1b5e20">③ 先物取引量 時系列</div>' + makeChart3() + '</div>';
+    }catch(e){
+      c3 = '<div class="card"><div style="padding:16px;color:red;font-size:11px">グラフ3エラー: '+e.message+'</div></div>';
+    }
+  }
+  let c4 = "";
+  if(show("c4")){
+    try{
+      c4 = '<div class="card"><div class="card-header" style="background:#4a148c">④ 先物建玉残高（限月別）</div>' + makeChart4() + '</div>';
+    }catch(e){
+      c4 = '<div class="card"><div style="padding:16px;color:red;font-size:11px">グラフ④エラー: '+e.message+'</div></div>';
+    }
+  }
 
   document.getElementById("app").innerHTML = `
     ${makeHeader(loading, hasData, upd)}
