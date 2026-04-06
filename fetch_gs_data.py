@@ -20,18 +20,19 @@ def last_friday():
     return d - timedelta(days=days_back)
 
 def oi_url(dt):
-    return (
-        "https://www.jpx.co.jp/automation/markets/derivatives/"
-        "open-interest/files/" + dt.strftime("%Y") + "/"
-        + dt.strftime("%Y%m%d") + "_nk225op_oi_by_tp.xlsx"
-    )
+    return ("https://www.jpx.co.jp/automation/markets/derivatives/"
+            "open-interest/files/" + dt.strftime("%Y") + "/"
+            + dt.strftime("%Y%m%d") + "_nk225op_oi_by_tp.xlsx")
+
+def fut_url(dt):
+    return ("https://www.jpx.co.jp/automation/markets/derivatives/"
+            "open-interest/files/" + dt.strftime("%Y") + "/"
+            + dt.strftime("%Y%m%d") + "_indexfut_oi_by_tp.xlsx")
 
 def vol_url(dt):
-    return (
-        "https://www.jpx.co.jp/automation/markets/derivatives/"
-        "participant-volume/files/daily/" + dt.strftime("%Y%m") + "/"
-        + dt.strftime("%Y%m%d") + "_volume_by_participant_whole_day.xlsx"
-    )
+    return ("https://www.jpx.co.jp/automation/markets/derivatives/"
+            "participant-volume/files/daily/" + dt.strftime("%Y%m") + "/"
+            + dt.strftime("%Y%m%d") + "_volume_by_participant_whole_day.xlsx")
 
 def parse_oi(raw, date_str):
     wb = openpyxl.load_workbook(BytesIO(raw), read_only=True, data_only=True)
@@ -54,6 +55,59 @@ def parse_oi(raw, date_str):
             if TARGET in str(row[16] or ""):
                 results.append({"date": date_str, "strike": int(cs), "type": "CALL", "side": "Buy", "qty": int(row[17] or 0)})
     return results, sorted(strikes)
+
+def parse_fut_oi(raw):
+    wb = openpyxl.load_workbook(BytesIO(raw), read_only=True, data_only=True)
+    ws = wb.active
+    rows = list(ws.iter_rows(values_only=True))
+    section = ""
+    result = {}
+    # 限月→キーのマッピング
+    month_map = {"04月": "2604", "05月": "2605", "06月": "2606", "09月": "2609"}
+    section_map = {
+        "日経225先物": "NK225",
+        "日経225mini": "MINI",
+        "TOPIX先物":   "TOPIX"
+    }
+    for row in rows:
+        row = list(row)
+        # セクション検出
+        if row[0] and "先物" in str(row[0]):
+            for k, v in section_map.items():
+                if k in str(row[0]):
+                    section = v
+                    break
+            continue
+        if not section or len(row) < 8:
+            continue
+        # 左側（期近）: col1=限月, col3=売超名, col4=売超枚数, col6=買超名, col7=買超枚数
+        month_str = str(row[1] or "")
+        month_key = None
+        for m, k in month_map.items():
+            if m in month_str:
+                month_key = k
+                break
+        if month_key:
+            key = section + "_" + month_key
+            if TARGET in str(row[3] or ""):
+                result[key] = -int(row[4] or 0)  # 売越=マイナス
+            if TARGET in str(row[6] or ""):
+                result[key] = int(row[7] or 0)   # 買越=プラス
+        # 右側（期先）: col11=限月, col13=売超名, col14=売超枚数, col16=買超名, col17=買超枚数
+        if len(row) > 16:
+            month_str2 = str(row[11] or "")
+            month_key2 = None
+            for m, k in month_map.items():
+                if m in month_str2:
+                    month_key2 = k
+                    break
+            if month_key2:
+                key2 = section + "_" + month_key2
+                if TARGET in str(row[13] or ""):
+                    result[key2] = -int(row[14] or 0)
+                if TARGET in str(row[16] or ""):
+                    result[key2] = int(row[17] or 0)
+    return result
 
 def parse_vol(raw, date_str):
     wb = openpyxl.load_workbook(BytesIO(raw), read_only=True, data_only=True)
@@ -85,11 +139,9 @@ def parse_vol(raw, date_str):
             if m:
                 opt_type = "CALL" if m.group(1) == "C" else "PUT"
                 strike = int(m.group(3))
-                opt_list.append({
-                    "date": date_str, "product": product,
+                opt_list.append({"date": date_str, "product": product,
                     "contract": contract, "type": opt_type,
-                    "strike": strike, "volume": vol
-                })
+                    "strike": strike, "volume": vol})
     return history_day, opt_list
 
 def main():
@@ -105,8 +157,9 @@ def main():
 
     history = existing.get("history", {})
     oi_history = existing.get("oi_history", [])
+    fut_oi_history = existing.get("fut_oi_history", {})
 
-    # ── 建玉残高（週次）──
+    # ── オプション建玉残高（週次）──
     friday = last_friday()
     date_str = friday.strftime("%Y-%m-%d")
     print("建玉残高対象日: " + date_str)
@@ -119,7 +172,6 @@ def main():
         oi_data, all_strikes = parse_oi(raw_oi, date_str)
         for d in oi_data:
             print(str(d["strike"]) + "円 " + d["type"] + " " + d["side"] + ": " + str(d["qty"]) + "枚")
-        # oi_history に今週分を追記（同じ日付は上書き）
         new_entry = {
             "date": date_str,
             "gs": oi_data,
@@ -134,7 +186,25 @@ def main():
         oi_history.sort(key=lambda x: x["date"])
     else:
         oi_data, all_strikes = [], []
-        print("建玉残高: 取得失敗")
+        print("オプション建玉残高: 取得失敗")
+
+    # ── 先物建玉残高（週次）──
+    print("先物建玉残高取得: " + date_str)
+    raw_fut = get(fut_url(friday))
+    if raw_fut is None and friday != friday - timedelta(days=7):
+        friday2 = friday - timedelta(days=7)
+        raw_fut = get(fut_url(friday2))
+    if raw_fut:
+        fut_data = parse_fut_oi(raw_fut)
+        print("先物建玉: " + str(fut_data))
+        fut_oi_history[date_str] = fut_data
+        # 古いデータを8週分まで保持
+        keys = sorted(fut_oi_history.keys())
+        if len(keys) > 8:
+            for old_key in keys[:-8]:
+                del fut_oi_history[old_key]
+    else:
+        print("先物建玉残高: 取得失敗")
 
     # ── 日次取引量 ──
     vol_data, vol_date, history_day = [], "", {}
@@ -145,11 +215,6 @@ def main():
             vol_date = dt.strftime("%Y-%m-%d")
             history_day, vol_data = parse_vol(raw_vol, vol_date)
             print("取引量取得: " + vol_date)
-            for k, v in history_day.items():
-                print("[先物] " + k + ": " + str(v) + "枚")
-            for d in vol_data:
-                if d["type"]:
-                    print("[OPT] " + d["type"] + " " + str(d["strike"]) + "円: " + str(d["volume"]) + "枚")
             break
 
     if history_day and vol_date:
@@ -166,12 +231,10 @@ def main():
                 "all": all_strikes
             }
         },
-        "vol": {
-            "date": vol_date,
-            "gs": vol_data
-        },
+        "vol": {"date": vol_date, "gs": vol_data},
         "history": history,
-        "oi_history": oi_history
+        "oi_history": oi_history,
+        "fut_oi_history": fut_oi_history
     }
 
     with open("gs_data.json", "w", encoding="utf-8") as f:
