@@ -365,16 +365,7 @@ function makeChart4(){
 }
 
 function makeChart5(){
-  // localStorageからデータ取得
-  function loadRecords(){
-    try{var d=localStorage.getItem("gs_predictions");return d?JSON.parse(d):[];}
-    catch(e){return[];}
-  }
-  function saveRecords(recs){
-    try{localStorage.setItem("gs_predictions",JSON.stringify(recs));}catch(e){}
-  }
-
-  var recs=loadRecords();
+  var recs=loadRecordsGlobal();
   var oiDate=liveData&&liveData.oi?liveData.oi.date:"";
   var futDate=liveData&&liveData.fut_oi_history?Object.keys(liveData.fut_oi_history).sort().pop():"";
   var today=new Date().toISOString().slice(0,10);
@@ -532,7 +523,7 @@ function verifyRecord(idx){
 }
 
 function deleteRecord(idx){
-  if(!confirm("この記録を削除しますか？"))return;
+  // confirm削除
   var recs=loadRecordsGlobal();
   recs.splice(idx,1);
   saveRecordsGlobal(recs);
@@ -543,11 +534,11 @@ function loadRecordsGlobal(){
   try{var d=localStorage.getItem("gs_predictions");return d?JSON.parse(d):[];}catch(e){return[];}
 }
 function saveRecordsGlobal(recs){
-  try{localStorage.setItem("gs_predictions",JSON.stringify(recs));}catch(e){alert("保存失敗: "+e.message);}
+  try{localStorage.setItem("gs_predictions",JSON.stringify(recs));}catch(e){console.log("保存失敗",e);}
 }
 
 function setTab(id){currentTab=id;render();}
-function show(id){return currentTab==="all"||currentTab===id;}
+function show(id){if(id==="c5")return currentTab==="c5"; return currentTab==="all"||currentTab===id;}
 
 function render(){
   var loading=arguments[0]||false;
