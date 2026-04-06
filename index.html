@@ -450,7 +450,7 @@ function buildChart5() {
   }
   function fmtEntries(arr) {
     if (!arr.length) return "—";
-    return arr.map(function(e){ return e.qty + "枚（" + (e.side==="Buy"?"買":"売") + " " + e.strike.toLocaleString() + "円）"; }).join("、");
+    return arr.map(function(e){ return (e.side==="Buy"?"買":"売") + " " + e.qty + "枚（" + e.strike.toLocaleString() + "円）"; }).join("、");
   }
   var callStr = fmtEntries(callEntries);
   var putStr  = fmtEntries(putEntries);
@@ -458,7 +458,7 @@ function buildChart5() {
   function diffSpan(v) {
     if (v === 0) return "";
     var color = v > 0 ? "#388e3c" : "#d32f2f";
-    var mark  = v > 0 ? "▲" : "▼";
+    var mark  = v > 0 ? "+" : "-";
     return " <span style='font-size:10px;color:" + color + "'>" + mark + Math.abs(v).toLocaleString() + "</span>";
   }
 
