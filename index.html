@@ -5,361 +5,283 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="GS Dashboard">
-
 <title>GS Derivatives Dashboard</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:#0e1520;font-family:'Helvetica Neue',sans-serif;color:#fff;min-height:100vh;padding:12px}
 button{cursor:pointer;border:none;border-radius:6px;padding:5px 11px;font-size:11px}
 .card{border-radius:8px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,0.5);margin-bottom:12px}
-.card-header{padding:5px 10px;font-size:10px;font-weight:700;color:#fff}
-.chart-inner{background:#fff;padding:10px 6px}
-.row{display:grid;height:11px}
-.row-c{display:flex;align-items:center;justify-content:center;font-size:7px;color:#555}
-.bar-wrap{position:relative;overflow:hidden}
-.tip{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border:1px solid #bbb;border-radius:8px;padding:10px 14px;font-size:12px;z-index:999;box-shadow:0 4px 12px rgba(0,0,0,0.15);pointer-events:none;color:#333;display:none}
+.hdr{padding:5px 10px;font-size:10px;font-weight:700;color:#fff}
+.ci{background:#fff;padding:10px 6px}
 </style>
 </head>
 <body>
-<div id="app"></div>
-<div class="tip" id="tip"></div>
-
+<div id="root"></div>
+<div id="tip" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border:1px solid #bbb;border-radius:8px;padding:10px 14px;font-size:12px;z-index:999;box-shadow:0 4px 12px rgba(0,0,0,.15);pointer-events:none;color:#333;display:none"></div>
 <script>
-const JSON_URL = "https://hiroshindoh.github.io/jpx-gs-tracker/gs_data.json";
-const BUY = "#1976d2", SELL = "#d32f2f";
-const ATM_LINE = 54000, DISCLOSE_FROM = 53125;
+var JSON_URL="https://hiroshindoh.github.io/jpx-gs-tracker/gs_data.json";
+var BUY="#1976d2",SELL="#d32f2f";
+var ATM_LINE=54000,DISCLOSE_FROM=53125;
+var liveData=null,currentTab="all";
 
-const FALLBACK_OI = {
-  date:"2026-03-13",
-  gs:[
-    {strike:54000,type:"CALL",side:"Buy",qty:150},
-    {strike:54000,type:"PUT",side:"Buy",qty:196},
-    {strike:53500,type:"PUT",side:"Buy",qty:12},
-    {strike:53375,type:"PUT",side:"Sell",qty:6},
-  ],
-  strikes:{min:53125,max:54125}
-};
+var FALLBACK_OI={date:"2026-03-13",gs:[
+  {strike:54000,type:"CALL",side:"Buy",qty:150},
+  {strike:54000,type:"PUT",side:"Buy",qty:196},
+  {strike:53500,type:"PUT",side:"Buy",qty:12},
+  {strike:53375,type:"PUT",side:"Sell",qty:6}
+],strikes:{min:53125,max:54125}};
 
-const FUTURES_OI = [
-  {name:"LARGE 2606",value:-10020},{name:"LARGE 2609",value:27},
-  {name:"MINI 2604",value:500},{name:"MINI 2605",value:0},
-  {name:"MINI 2606",value:0},{name:"TOPIX 2606",value:-56545},{name:"TOPIX 2609",value:-600},
-];
+var STRIKES=[];
+for(var _s=51000;_s<=56000;_s+=125)STRIKES.push(_s);
 
-const STRIKES = [];
-for(let s=51000;s<=56000;s+=125) STRIKES.push(s);
-
-let liveData = null;
-let currentTab = "all";
+var OPTION_VOL_DATA=STRIKES.map(function(s){return{strike:s,callVol:0,putVol:s===51000?25:0};});
 
 function buildSnapshot(oi){
-  const mn=oi.strikes?.min||51000, mx=oi.strikes?.max||56000, map={};
-  for(let s=50000;s<=57000;s+=125)
+  var mn=oi.strikes?oi.strikes.min||51000:51000;
+  var mx=oi.strikes?oi.strikes.max||56000:56000;
+  var map={};
+  for(var s=50000;s<=57000;s+=125){
     map[s]={strike:s,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:s>=mn&&s<=mx};
-  (oi.gs||[]).forEach(d=>{
-    if(!map[d.strike]) map[d.strike]={strike:d.strike,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:true};
-    if(d.type==="CALL"&&d.side==="Buy")  map[d.strike].callBuy=d.qty;
-    if(d.type==="CALL"&&d.side==="Sell") map[d.strike].callSell=d.qty;
-    if(d.type==="PUT" &&d.side==="Buy")  map[d.strike].putBuy=d.qty;
-    if(d.type==="PUT" &&d.side==="Sell") map[d.strike].putSell=d.qty;
+  }
+  (oi.gs||[]).forEach(function(d){
+    if(!map[d.strike])map[d.strike]={strike:d.strike,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:true};
+    if(d.type==="CALL"&&d.side==="Buy")map[d.strike].callBuy=d.qty;
+    if(d.type==="CALL"&&d.side==="Sell")map[d.strike].callSell=d.qty;
+    if(d.type==="PUT"&&d.side==="Buy")map[d.strike].putBuy=d.qty;
+    if(d.type==="PUT"&&d.side==="Sell")map[d.strike].putSell=d.qty;
   });
   return map;
 }
 
-function showTip(strike, buyLabel, buyVal, sellLabel, sellVal){
-  const tip = document.getElementById("tip");
-  tip.innerHTML = `<b>${strike.toLocaleString()}円</b><br><span style="color:${BUY}">${buyLabel}: ${buyVal}枚</span><br><span style="color:${SELL}">${sellLabel}: ${sellVal}枚</span>`;
-  tip.style.display = "block";
+function showTip(strike,bl,bv,sl,sv){
+  var t=document.getElementById("tip");
+  t.innerHTML="<b>"+strike.toLocaleString()+"円</b><br><span style='color:"+BUY+"'>"+bl+": "+bv+"枚</span><br><span style='color:"+SELL+"'>"+sl+": "+sv+"枚</span>";
+  t.style.display="block";
 }
-function hideTip(){ document.getElementById("tip").style.display = "none"; }
+function hideTip(){document.getElementById("tip").style.display="none";}
 
 function makeChart1(){
-  const cur = liveData?.oi || FALLBACK_OI;
-  const hist = liveData?.oi_history || [];
+  var cur=liveData&&liveData.oi?liveData.oi:FALLBACK_OI;
+  var hist=liveData&&liveData.oi_history?liveData.oi_history:[];
+  var ZONE_COLORS=["#fff9c4","#ffe0b2","#f3e5f5","#e8f5e9","#e3f2fd"];
+  var allSnaps=hist.map(function(h,i){
+    return{date:h.date,map:buildSnapshot(h),strikes:h.strikes,
+      color:ZONE_COLORS[i]||"#f5f5f5",
+      label:h.date&&h.date.length>=10?h.date.slice(5).replace("-","/"):h.date||"",
+      isCurrent:h.date===cur.date};
+  });
+  var curSnap=null;
+  for(var i=0;i<allSnaps.length;i++){if(allSnaps[i].isCurrent){curSnap=allSnaps[i];break;}}
+  if(!curSnap)curSnap={date:cur.date,map:buildSnapshot(cur),strikes:cur.strikes,color:"#fffde7",
+    label:cur.date&&cur.date.length>=10?cur.date.slice(5).replace("-","/"):"03/13",isCurrent:true};
 
-  // 全スナップショット（oi_history 全件）を日付順で処理
-  // 各スナップショットに色と日付ラベルを割り当て
-  const ZONE_COLORS = ["#fff9c4","#ffe0b2","#f3e5f5","#e8f5e9","#e3f2fd"];
-  const allSnaps = hist.map((h,i)=>({
-    date: h.date,
-    map: buildSnapshot(h),
-    strikes: h.strikes,
-    color: ZONE_COLORS[i] || "#f5f5f5",
-    label: h.date.length>=10 ? h.date.slice(5).replace("-","/") : h.date,
-    isCurrent: h.date === cur.date
-  }));
+  var allStrikesArr=[];
+  for(var s=51000;s<=57000;s+=125)allStrikesArr.push(s);
 
-  // 最新スナップショット（cur と同じ date）
-  const curSnap = allSnaps.find(s=>s.isCurrent) || {
-    date: cur.date, map: buildSnapshot(cur), strikes: cur.strikes,
-    color: "#fffde7",
-    label: cur.date.length>=10 ? cur.date.slice(5).replace("-","/") : "03/13",
-    isCurrent: true
-  };
-
-  // 全ストライクのセット（全スナップショットをマージ）
-  const allStrikesSet = new Set();
-  for(let s=51000;s<=57000;s+=125) allStrikesSet.add(s);
-  const sortedStrikes = [...allStrikesSet].sort((a,b)=>a-b);
-
-  // 各ストライクの表示データを構築
-  const cd = sortedStrikes.map(strike=>{
-    // 最新スナップショットのデータ
-    const cur_d = curSnap.map[strike] || {strike,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:false};
-    // どのゾーンに属するか（複数可）
-    const zones = allSnaps.filter(s=>{
-      const mn=s.strikes?.min||0, mx=s.strikes?.max||0;
-      return strike>=mn && strike<=mx;
+  var cd=allStrikesArr.map(function(strike){
+    var cd=curSnap.map[strike]||{strike:strike,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:false};
+    var zones=allSnaps.filter(function(sn){
+      var mn=sn.strikes&&sn.strikes.min?sn.strikes.min:0;
+      var mx=sn.strikes&&sn.strikes.max?sn.strikes.max:0;
+      return strike>=mn&&strike<=mx;
     });
-    return {...cur_d, zones};
+    return{strike:strike,callBuy:cd.callBuy,callSell:cd.callSell,putBuy:cd.putBuy,putSell:cd.putSell,disclosed:cd.disclosed,zones:zones};
   });
 
-  // CALL/PUT合計（全スナップショット合算）
-  let ct=0,pt=0;
-  allSnaps.forEach(s=>{
-    Object.values(s.map).forEach(d=>{ct+=d.callBuy;pt+=d.putBuy;});
-  });
-  // 重複除去のため最新のみで計算
-  ct = Object.values(curSnap.map).reduce((s,d)=>s+d.callBuy,0);
-  pt = Object.values(curSnap.map).reduce((s,d)=>s+d.putBuy,0);
-  // 他スナップのデータも加算（重複しないストライクのみ）
-  allSnaps.filter(s=>!s.isCurrent).forEach(s=>{
-    Object.values(s.map).forEach(d=>{
-      if(!curSnap.map[d.strike]||curSnap.map[d.strike].callBuy===0) ct+=d.callBuy;
-      if(!curSnap.map[d.strike]||curSnap.map[d.strike].putBuy===0) pt+=d.putBuy;
+  var ct=0,pt=0;
+  Object.values(curSnap.map).forEach(function(d){ct+=d.callBuy;pt+=d.putBuy;});
+  allSnaps.filter(function(s){return!s.isCurrent;}).forEach(function(s){
+    Object.values(s.map).forEach(function(d){
+      if(!curSnap.map[d.strike]||curSnap.map[d.strike].callBuy===0)ct+=d.callBuy;
+      if(!curSnap.map[d.strike]||curSnap.map[d.strike].putBuy===0)pt+=d.putBuy;
     });
   });
-  const pcr = (ct+pt)>0 ? (pt/(ct+pt)*100).toFixed(2) : "0.00";
-  const data = [...cd].reverse();
-  const MAX=200, RH=11;
+  var pcr=(ct+pt)>0?(pt/(ct+pt)*100).toFixed(2):"0.00";
+  var data=cd.slice().reverse();
+  var MAX=200,RH=11;
 
-  // 円グラフ
-  let pieHTML="";
+  var pieHTML="";
   if(ct+pt>0){
-    const r=22,cx=28,cy=30,tot=ct+pt,a=(ct/tot)*2*Math.PI;
-    const x1=cx+r*Math.sin(a),y1=cy-r*Math.cos(a),lg=a>Math.PI?1:0,lr=r*0.58;
-    const clx=cx+lr*Math.sin(a/2),cly=cy-lr*Math.cos(a/2);
-    const pm=a+(2*Math.PI-a)/2,plx=cx+lr*Math.sin(pm),ply=cy-lr*Math.cos(pm);
-    pieHTML=`<svg width="115" height="62" viewBox="0 0 115 62">
-      <circle cx="${cx}" cy="${cy}" r="${r}" fill="#f5a623"/>
-      <path d="M${cx},${cy} L${cx},${cy-r} A${r},${r} 0 ${lg},1 ${x1},${y1} Z" fill="#5b9bd5"/>
-      <text x="${clx}" y="${cly-5}" text-anchor="middle" font-size="7" fill="#fff">call</text>
-      <text x="${clx}" y="${cly+5}" text-anchor="middle" font-size="9" font-weight="700" fill="#fff">${ct}</text>
-      <text x="${plx}" y="${ply-5}" text-anchor="middle" font-size="7" fill="#fff">put</text>
-      <text x="${plx}" y="${ply+5}" text-anchor="middle" font-size="9" font-weight="700" fill="#fff">${pt}</text>
-      <text x="60" y="22" font-size="8" font-weight="700" fill="#555">PCR</text>
-      <text x="60" y="36" font-size="12" font-weight="700" fill="${BUY}">${pcr}%</text>
-    </svg>`;
+    var r=22,cx=28,cy=30,tot=ct+pt,a=(ct/tot)*2*Math.PI;
+    var x1=cx+r*Math.sin(a),y1=cy-r*Math.cos(a),lg=a>Math.PI?1:0,lr=r*0.58;
+    var clx=cx+lr*Math.sin(a/2),cly=cy-lr*Math.cos(a/2);
+    var pm=a+(2*Math.PI-a)/2,plx=cx+lr*Math.sin(pm),ply=cy-lr*Math.cos(pm);
+    pieHTML="<svg width='115' height='62' viewBox='0 0 115 62'>"
+      +"<circle cx='"+cx+"' cy='"+cy+"' r='"+r+"' fill='#f5a623'/>"
+      +"<path d='M"+cx+","+cy+" L"+cx+","+(cy-r)+" A"+r+","+r+" 0 "+lg+",1 "+x1+","+y1+" Z' fill='#5b9bd5'/>"
+      +"<text x='"+clx+"' y='"+(cly-5)+"' text-anchor='middle' font-size='7' fill='#fff'>call</text>"
+      +"<text x='"+clx+"' y='"+(cly+5)+"' text-anchor='middle' font-size='9' font-weight='700' fill='#fff'>"+ct+"</text>"
+      +"<text x='"+plx+"' y='"+(ply-5)+"' text-anchor='middle' font-size='7' fill='#fff'>put</text>"
+      +"<text x='"+plx+"' y='"+(ply+5)+"' text-anchor='middle' font-size='9' font-weight='700' fill='#fff'>"+pt+"</text>"
+      +"<text x='60' y='22' font-size='8' font-weight='700' fill='#555'>PCR</text>"
+      +"<text x='60' y='36' font-size='12' font-weight='700' fill='"+BUY+"'>"+pcr+"%</text>"
+      +"</svg>";
   }
 
-  let rowsHTML="";
-  data.forEach(d=>{
-    const isAtm=d.strike===ATM_LINE, BH=RH-3;
-
-    // 背景色：属するゾーンの中で最新のものを使用
-    let bg="#fff";
-    if(d.zones && d.zones.length>0){
-      bg = d.zones[d.zones.length-1].color;
-    }
-
-    // 各ゾーンの最上行にラベルを表示（重なる場合は縦にずらす）
-    let labelHTML="";
+  var rowsHTML="";
+  data.forEach(function(d){
+    var isAtm=d.strike===ATM_LINE,BH=RH-3;
+    var bg=d.zones&&d.zones.length>0?d.zones[d.zones.length-1].color:"#fff";
+    var labelHTML="",labelCount=0;
     if(d.zones){
-      let labelCount=0;
-      d.zones.forEach(z=>{
-        if(d.strike===z.strikes?.max){
-          const topOffset = labelCount * 10;
-          labelHTML+=`<div style="position:absolute;left:0;top:${topOffset}px;z-index:${10+labelCount};font-size:7px;font-weight:700;color:#333;padding:0 4px;pointer-events:none;line-height:10px">開示範囲（${z.label}）</div>`;
+      d.zones.forEach(function(z){
+        if(d.strike===(z.strikes&&z.strikes.max?z.strikes.max:null)){
+          var top=labelCount*10;
+          labelHTML+="<div style='position:absolute;left:0;top:"+top+"px;z-index:"+(10+labelCount)+";font-size:7px;font-weight:700;color:#333;padding:0 4px;line-height:10px;pointer-events:none'>開示範囲（"+z.label+"）</div>";
           labelCount++;
         }
       });
     }
-
-    // 過去スナップショットの薄い棒
-    let oldBarsCall="", oldBarsPut="";
-    allSnaps.filter(s=>!s.isCurrent).forEach(s=>{
-      const o=s.map[d.strike];
-      if(!o) return;
-      if(o.callBuy>0) oldBarsCall+=`<div style="position:absolute;right:0;top:1px;height:${BH}px;width:${Math.min(o.callBuy/MAX*100,100)}%;background:rgba(25,118,210,0.25)"></div>`;
-      if(o.callSell>0) oldBarsCall+=`<div style="position:absolute;right:${Math.min(o.callBuy/MAX*100,100)}%;top:1px;height:${BH}px;width:${Math.min(o.callSell/MAX*100,100)}%;background:rgba(211,47,47,0.25)"></div>`;
-      if(o.putBuy>0) oldBarsPut+=`<div style="position:absolute;left:0;top:1px;height:${BH}px;width:${Math.min(o.putBuy/MAX*100,100)}%;background:rgba(25,118,210,0.25)"></div>`;
-      if(o.putSell>0) oldBarsPut+=`<div style="position:absolute;left:${Math.min(o.putBuy/MAX*100,100)}%;top:1px;height:${BH}px;width:${Math.min(o.putSell/MAX*100,100)}%;background:rgba(211,47,47,0.25)"></div>`;
+    var oldCallBars="",oldPutBars="";
+    allSnaps.filter(function(sn){return!sn.isCurrent;}).forEach(function(sn){
+      var o=sn.map[d.strike];if(!o)return;
+      if(o.callBuy>0)oldCallBars+="<div style='position:absolute;right:0;top:1px;height:"+BH+"px;width:"+Math.min(o.callBuy/MAX*100,100)+"%;background:rgba(25,118,210,0.25)'></div>";
+      if(o.callSell>0)oldCallBars+="<div style='position:absolute;right:"+Math.min(o.callBuy/MAX*100,100)+"%;top:1px;height:"+BH+"px;width:"+Math.min(o.callSell/MAX*100,100)+"%;background:rgba(211,47,47,0.25)'></div>";
+      if(o.putBuy>0)oldPutBars+="<div style='position:absolute;left:0;top:1px;height:"+BH+"px;width:"+Math.min(o.putBuy/MAX*100,100)+"%;background:rgba(25,118,210,0.25)'></div>";
+      if(o.putSell>0)oldPutBars+="<div style='position:absolute;left:"+Math.min(o.putBuy/MAX*100,100)+"%;top:1px;height:"+BH+"px;width:"+Math.min(o.putSell/MAX*100,100)+"%;background:rgba(211,47,47,0.25)'></div>";
     });
-
-    // 最新の棒
-    const cur_d = curSnap.map[d.strike];
-    const callBuyBar = cur_d?.callBuy>0?`<div style="position:absolute;right:0;top:1px;height:${BH}px;width:${Math.min(cur_d.callBuy/MAX*100,100)}%;background:${BUY}"></div>`:"";
-    const callSellBar = cur_d?.callSell>0?`<div style="position:absolute;right:${Math.min((cur_d?.callBuy||0)/MAX*100,100)}%;top:1px;height:${BH}px;width:${Math.min(cur_d.callSell/MAX*100,100)}%;background:${SELL}"></div>`:"";
-    const putBuyBar = cur_d?.putBuy>0?`<div style="position:absolute;left:0;top:1px;height:${BH}px;width:${Math.min(cur_d.putBuy/MAX*100,100)}%;background:${BUY}"></div>`:"";
-    const putSellBar = cur_d?.putSell>0?`<div style="position:absolute;left:${Math.min((cur_d?.putBuy||0)/MAX*100,100)}%;top:1px;height:${BH}px;width:${Math.min(cur_d.putSell/MAX*100,100)}%;background:${SELL}"></div>`:"";
-
-    rowsHTML+=`<div style="position:relative">
-      ${labelHTML}
-      <div style="display:grid;grid-template-columns:1fr 68px 1fr;height:${RH}px">
-        <div style="background:${bg};position:relative;overflow:hidden;border-right:1px solid #ccc"
-          ontouchstart="showTip(${d.strike},'Buy',${cur_d?.callBuy||0},'Sell',${cur_d?.callSell||0})"
-          onmouseenter="showTip(${d.strike},'Buy',${cur_d?.callBuy||0},'Sell',${cur_d?.callSell||0})">
-          ${oldBarsCall}${callBuyBar}${callSellBar}
-        </div>
-        <div style="height:${RH}px;display:flex;align-items:center;justify-content:center;font-size:7px;font-weight:${isAtm?700:400};color:#555;background:${bg}">${d.strike.toLocaleString()}</div>
-        <div style="background:${bg};position:relative;overflow:hidden;border-left:1px solid #ccc"
-          ontouchstart="showTip(${d.strike},'Buy',${cur_d?.putBuy||0},'Sell',${cur_d?.putSell||0})"
-          onmouseenter="showTip(${d.strike},'Buy',${cur_d?.putBuy||0},'Sell',${cur_d?.putSell||0})">
-          ${oldBarsPut}${putBuyBar}${putSellBar}
-        </div>
-      </div>
-    </div>`;
+    var cd2=curSnap.map[d.strike]||{callBuy:0,callSell:0,putBuy:0,putSell:0};
+    var cBuy=cd2.callBuy>0?"<div style='position:absolute;right:0;top:1px;height:"+BH+"px;width:"+Math.min(cd2.callBuy/MAX*100,100)+"%;background:"+BUY+"'></div>":"";
+    var cSell=cd2.callSell>0?"<div style='position:absolute;right:"+Math.min(cd2.callBuy/MAX*100,100)+"%;top:1px;height:"+BH+"px;width:"+Math.min(cd2.callSell/MAX*100,100)+"%;background:"+SELL+"'></div>":"";
+    var pBuy=cd2.putBuy>0?"<div style='position:absolute;left:0;top:1px;height:"+BH+"px;width:"+Math.min(cd2.putBuy/MAX*100,100)+"%;background:"+BUY+"'></div>":"";
+    var pSell=cd2.putSell>0?"<div style='position:absolute;left:"+Math.min(cd2.putBuy/MAX*100,100)+"%;top:1px;height:"+BH+"px;width:"+Math.min(cd2.putSell/MAX*100,100)+"%;background:"+SELL+"'></div>":"";
+    rowsHTML+="<div style='position:relative'>"+labelHTML
+      +"<div style='display:grid;grid-template-columns:1fr 68px 1fr;height:"+RH+"px'>"
+      +"<div style='background:"+bg+";position:relative;overflow:hidden;cursor:pointer;border-right:1px solid #ccc' ontouchstart='showTip("+d.strike+",'+'\"Buy\",'+cd2.callBuy+',\"Sell\",'+cd2.callSell+')' onmouseenter='showTip("+d.strike+",\"Buy\",'+cd2.callBuy+',\"Sell\",'+cd2.callSell+')'>"
+      +oldCallBars+cBuy+cSell+"</div>"
+      +"<div style='height:"+RH+"px;display:flex;align-items:center;justify-content:center;font-size:7px;font-weight:"+(isAtm?700:400)+";color:#555;background:"+bg+"'>"+d.strike.toLocaleString()+"</div>"
+      +"<div style='background:"+bg+";position:relative;overflow:hidden;cursor:pointer;border-left:1px solid #ccc' ontouchstart='showTip("+d.strike+",\"Buy\","+cd2.putBuy+",\"Sell\","+cd2.putSell+")' onmouseenter='showTip("+d.strike+",\"Buy\","+cd2.putBuy+",\"Sell\","+cd2.putSell+")'>"
+      +oldPutBars+pBuy+pSell+"</div>"
+      +"</div></div>";
   });
-
-  // 凡例（各開示範囲の色）
-  const legendZones = allSnaps.map(s=>`<span><span style="display:inline-block;width:12px;height:9px;background:${s.color};border:1px solid #ccc"></span> ${s.label}</span>`).join("");
-
-  return `<div class="chart-inner" ontouchend="hideTip()" onmouseleave="hideTip()">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:3px">
-      <div><div style="font-weight:700;font-size:12px">Goldman_Sachs_Japan_CoLtd</div>
-      <div style="font-size:11px;color:#555">2026年 04月限 建玉残高</div></div>
-      ${pieHTML}
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 68px 1fr;margin-bottom:2px">
-      <div style="display:flex;justify-content:space-between;font-size:7px;color:#888"><span>200</span><span>150</span><span>100</span><span>50</span><span>0</span></div>
-      <div></div>
-      <div style="display:flex;justify-content:space-between;font-size:7px;color:#888"><span>0</span><span>50</span><span>100</span><span>150</span><span>200</span></div>
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 68px 1fr;border-bottom:1px solid #ccc">
-      <div style="text-align:center;background:#f5f5f5;font-size:11px;font-weight:700;padding:3px 0">CALL</div>
-      <div style="background:#f5f5f5"></div>
-      <div style="text-align:center;background:#f5f5f5;font-size:11px;font-weight:700;padding:3px 0">PUT</div>
-    </div>
-    ${rowsHTML}
-    <div style="margin-top:5px;padding:4px 8px;background:#f5f5f5;border-radius:4px;font-size:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-      ${legendZones}
-      <span style="color:${BUY}">■ Buy</span><span style="color:${SELL}">■ Sell</span>
-      <span style="color:rgba(25,118,210,0.4)">■ 過去</span>
-    </div>
-  </div>`;
+  var legendZones=allSnaps.map(function(s){
+    return "<span><span style='display:inline-block;width:12px;height:9px;background:"+s.color+";border:1px solid #ccc'></span> "+s.label+"</span>";
+  }).join(" ");
+  return "<div class='ci' ontouchend='hideTip()' onmouseleave='hideTip()'>"
+    +"<div style='display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:3px'>"
+    +"<div><div style='font-weight:700;font-size:12px'>Goldman_Sachs_Japan_CoLtd</div>"
+    +"<div style='font-size:11px;color:#555'>2026年 04月限 建玉残高</div></div>"
+    +pieHTML+"</div>"
+    +"<div style='display:grid;grid-template-columns:1fr 68px 1fr;margin-bottom:2px'>"
+    +"<div style='display:flex;justify-content:space-between;font-size:7px;color:#888'><span>200</span><span>150</span><span>100</span><span>50</span><span>0</span></div><div></div>"
+    +"<div style='display:flex;justify-content:space-between;font-size:7px;color:#888'><span>0</span><span>50</span><span>100</span><span>150</span><span>200</span></div></div>"
+    +"<div style='display:grid;grid-template-columns:1fr 68px 1fr;border-bottom:1px solid #ccc'>"
+    +"<div style='text-align:center;background:#f5f5f5;font-size:11px;font-weight:700;padding:3px 0'>CALL</div><div style='background:#f5f5f5'></div>"
+    +"<div style='text-align:center;background:#f5f5f5;font-size:11px;font-weight:700;padding:3px 0'>PUT</div></div>"
+    +rowsHTML
+    +"<div style='margin-top:5px;padding:4px 8px;background:#f5f5f5;border-radius:4px;font-size:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center'>"
+    +legendZones
+    +"<span style='color:"+BUY+"'>&#9632; Buy</span><span style='color:"+SELL+"'>&#9632; Sell</span>"
+    +"<span style='color:rgba(25,118,210,0.5)'>&#9632; 過去</span></div></div>";
 }
 
 function makeChart2(){
-  let vd;
-  if(liveData?.vol?.gs?.length){
-    const opts=liveData.vol.gs.filter(d=>d.type==="CALL"||d.type==="PUT");
+  var vd;
+  if(liveData&&liveData.vol&&liveData.vol.gs&&liveData.vol.gs.length){
+    var opts=liveData.vol.gs.filter(function(d){return d.type==="CALL"||d.type==="PUT";});
     if(opts.length){
-      const ss=new Set(opts.map(d=>d.strike).filter(Boolean));
-      const mn=liveData.oi?.strikes?.min||51000,mx=liveData.oi?.strikes?.max||56000;
-      for(let s=mn;s<=mx;s+=125) ss.add(s);
-      const m={};
-      ss.forEach(s=>{m[s]={strike:s,callVol:0,putVol:0};});
-      opts.forEach(d=>{if(!m[d.strike])m[d.strike]={strike:d.strike,callVol:0,putVol:0};if(d.type==="CALL")m[d.strike].callVol+=d.volume;else m[d.strike].putVol+=d.volume;});
-      vd=Object.values(m).sort((a,b)=>a.strike-b.strike);
+      var ss=[];
+      opts.forEach(function(d){if(d.strike&&ss.indexOf(d.strike)<0)ss.push(d.strike);});
+      var mn=liveData.oi&&liveData.oi.strikes?liveData.oi.strikes.min||51000:51000;
+      var mx=liveData.oi&&liveData.oi.strikes?liveData.oi.strikes.max||56000:56000;
+      for(var s=mn;s<=mx;s+=125){if(ss.indexOf(s)<0)ss.push(s);}
+      var m={};
+      ss.forEach(function(s){m[s]={strike:s,callVol:0,putVol:0};});
+      opts.forEach(function(d){
+        if(!m[d.strike])m[d.strike]={strike:d.strike,callVol:0,putVol:0};
+        if(d.type==="CALL")m[d.strike].callVol+=d.volume;
+        else m[d.strike].putVol+=d.volume;
+      });
+      vd=Object.values(m).sort(function(a,b){return a.strike-b.strike;});
     }
   }
-  if(!vd) vd=STRIKES.map(s=>({strike:s,callVol:0,putVol:s===51000?25:0}));
-  const data=[...vd].reverse();
-  const pt=vd.reduce((s,d)=>s+d.putVol,0),ct=vd.reduce((s,d)=>s+d.callVol,0);
-  const pcr=ct===0?"100.00":(pt/(ct+pt)*100).toFixed(2);
-  const MAX=Math.max(...vd.map(d=>Math.max(d.callVol,d.putVol)),10),RH=13;
-  const vdate=liveData?.vol?.date||"";
-
-  let rowsHTML="";
-  data.forEach(d=>{
-    const hc=d.callVol>0,hp=d.putVol>0,act=hc||hp;
-    rowsHTML+=`<div style="display:grid;grid-template-columns:1fr 64px 1fr;height:${RH}px">
-      <div style="background:#fce8e8;position:relative;overflow:hidden"
-        ontouchstart="showTip(${d.strike},'CALL',${d.callVol},'PUT',${d.putVol})"
-        onmouseenter="showTip(${d.strike},'CALL',${d.callVol},'PUT',${d.putVol})">
-        ${hc?`<div style="position:absolute;right:0;top:1px;height:${RH-2}px;width:${Math.min(d.callVol/MAX*100,100)}%;background:#5b9bd5"></div>`:""}
-      </div>
-      <div style="height:${RH}px;display:flex;align-items:center;justify-content:center;font-size:${act?9:7}px;font-weight:${act?700:400};color:${act?"#e65100":"#777"};background:${act?"#fff3e0":"#f9f9f9"}">${d.strike.toLocaleString()}</div>
-      <div style="background:#e8f4fd;position:relative;overflow:hidden"
-        ontouchstart="showTip(${d.strike},'CALL',${d.callVol},'PUT',${d.putVol})"
-        onmouseenter="showTip(${d.strike},'CALL',${d.callVol},'PUT',${d.putVol})">
-        ${hp?`<div style="position:absolute;left:0;top:1px;height:${RH-2}px;width:${Math.min(d.putVol/MAX*100,100)}%;background:${SELL}"></div>`:""}
-      </div>
-    </div>`;
+  if(!vd)vd=OPTION_VOL_DATA;
+  var data=vd.slice().reverse();
+  var pt=vd.reduce(function(s,d){return s+d.putVol;},0);
+  var ct=vd.reduce(function(s,d){return s+d.callVol;},0);
+  var pcr=ct===0?"100.00":(pt/(ct+pt)*100).toFixed(2);
+  var MAX=Math.max.apply(null,vd.map(function(d){return Math.max(d.callVol,d.putVol);}));
+  MAX=Math.max(MAX,10);
+  var RH=13;
+  var vdate=liveData&&liveData.vol&&liveData.vol.date?liveData.vol.date:"";
+  var rowsHTML="";
+  data.forEach(function(d){
+    var hc=d.callVol>0,hp=d.putVol>0,act=hc||hp;
+    rowsHTML+="<div style='display:grid;grid-template-columns:1fr 64px 1fr;height:"+RH+"px'>"
+      +"<div style='background:#fce8e8;position:relative;overflow:hidden' ontouchstart='showTip("+d.strike+",\"CALL\","+d.callVol+",\"PUT\","+d.putVol+")' onmouseenter='showTip("+d.strike+",\"CALL\","+d.callVol+",\"PUT\","+d.putVol+")'>"
+      +(hc?"<div style='position:absolute;right:0;top:1px;height:"+(RH-2)+"px;width:"+Math.min(d.callVol/MAX*100,100)+"%;background:#5b9bd5'></div>":"")+"</div>"
+      +"<div style='height:"+RH+"px;display:flex;align-items:center;justify-content:center;font-size:"+(act?9:7)+"px;font-weight:"+(act?700:400)+";color:"+(act?"#e65100":"#777")+";background:"+(act?"#fff3e0":"#f9f9f9")+"'>"+d.strike.toLocaleString()+"</div>"
+      +"<div style='background:#e8f4fd;position:relative;overflow:hidden' ontouchstart='showTip("+d.strike+",\"CALL\","+d.callVol+",\"PUT\","+d.putVol+")' onmouseenter='showTip("+d.strike+",\"CALL\","+d.callVol+",\"PUT\","+d.putVol+")'>"
+      +(hp?"<div style='position:absolute;left:0;top:1px;height:"+(RH-2)+"px;width:"+Math.min(d.putVol/MAX*100,100)+"%;background:"+SELL+"'></div>":"")+"</div></div>";
   });
-
-  return `<div class="chart-inner" ontouchend="hideTip()" onmouseleave="hideTip()">
-    <div style="font-weight:700;font-size:12px;text-align:center">Goldman_Sachs_Japan_CoLtd</div>
-    <div style="font-size:11px;text-align:center;color:#555;margin-bottom:1px">2026年 04月限 本日の取引量${vdate?"（"+vdate+"）":""}</div>
-    <div style="background:#ffebee;border:2px solid #e53935;border-radius:6px;padding:5px 8px;text-align:center;font-size:11px;font-weight:700;color:#c62828;margin:4px 0">売りか買いかは分かりません</div>
-    <div style="display:grid;grid-template-columns:1fr 64px 1fr;margin-bottom:2px">
-      <div style="display:flex;justify-content:space-between;font-size:7px;color:#888"><span>${MAX}</span><span>${Math.round(MAX*0.5)}</span><span>0</span></div>
-      <div></div>
-      <div style="display:flex;justify-content:space-between;font-size:7px;color:#888"><span>0</span><span>${Math.round(MAX*0.5)}</span><span>${MAX}</span></div>
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 64px 1fr;border-bottom:1px solid #ccc">
-      <div style="text-align:center;background:#e3f2fd;font-size:11px;font-weight:700;padding:3px 0">CALL</div>
-      <div style="background:#f5f5f5;display:flex;align-items:center;justify-content:center;font-size:8px;color:#555">strike</div>
-      <div style="text-align:center;background:#fce4ec;font-size:11px;font-weight:700;padding:3px 0">PUT(PCR:${pcr}%)</div>
-    </div>
-    ${rowsHTML}
-  </div>`;
+  return "<div class='ci' ontouchend='hideTip()' onmouseleave='hideTip()'>"
+    +"<div style='font-weight:700;font-size:12px;text-align:center'>Goldman_Sachs_Japan_CoLtd</div>"
+    +"<div style='font-size:11px;text-align:center;color:#555;margin-bottom:1px'>2026年 04月限 本日の取引量"+(vdate?"（"+vdate+"）":"")+"</div>"
+    +"<div style='background:#ffebee;border:2px solid #e53935;border-radius:6px;padding:5px 8px;text-align:center;font-size:11px;font-weight:700;color:#c62828;margin:4px 0'>売りか買いかは分かりません</div>"
+    +"<div style='display:grid;grid-template-columns:1fr 64px 1fr;margin-bottom:2px'>"
+    +"<div style='display:flex;justify-content:space-between;font-size:7px;color:#888'><span>"+MAX+"</span><span>"+Math.round(MAX*0.5)+"</span><span>0</span></div><div></div>"
+    +"<div style='display:flex;justify-content:space-between;font-size:7px;color:#888'><span>0</span><span>"+Math.round(MAX*0.5)+"</span><span>"+MAX+"</span></div></div>"
+    +"<div style='display:grid;grid-template-columns:1fr 64px 1fr;border-bottom:1px solid #ccc'>"
+    +"<div style='text-align:center;background:#e3f2fd;font-size:11px;font-weight:700;padding:3px 0'>CALL</div>"
+    +"<div style='background:#f5f5f5;display:flex;align-items:center;justify-content:center;font-size:8px;color:#555'>strike</div>"
+    +"<div style='text-align:center;background:#fce4ec;font-size:11px;font-weight:700;padding:3px 0'>PUT(PCR:"+pcr+"%)</div></div>"
+    +rowsHTML+"</div>";
 }
 
 function makeChart3(){
-  const hist=liveData?.history||{}, dates=Object.keys(hist).sort();
-  if(!dates.length) return `<div style="background:#1a1a2e;padding:24px;color:#888;text-align:center">
-    <div style="font-size:13px;color:#fff;margin-bottom:8px">GSAX 先物取引量 時系列</div>
-    <div style="font-size:11px">データ蓄積中... ⏳<br>毎営業日16:00に自動追加されます</div>
-  </div>`;
-
-  const ld=dates[dates.length-1];
-  const SDEF=[
+  var hist=liveData&&liveData.history?liveData.history:{};
+  var dates=Object.keys(hist).sort();
+  if(!dates.length)return "<div style='background:#1a1a2e;padding:24px;color:#888;text-align:center'><div style='font-size:13px;color:#fff;margin-bottom:8px'>GSAX 先物取引量 時系列</div><div style='font-size:11px'>データ蓄積中... 毎営業日16:00に追加されます</div></div>";
+  var ld2=dates[dates.length-1];
+  var SDEF=[
     {key:"L6",label:"ラージ期近(6月)",color:"#ef5350"},
     {key:"L9",label:"ラージ期先(9月)",color:"#ef5350"},
     {key:"T6",label:"TPX期近(6月)",color:"#43a047"},
     {key:"T9",label:"TPX期先(9月)",color:"#43a047"},
     {key:"M4",label:"ミニ期近(4月)",color:"#ff9800"},
     {key:"M5",label:"ミニ期先(5月)",color:"#ff9800"},
-    {key:"M6",label:"ミニ期先先(6月)",color:"#ff9800"},
+    {key:"M6",label:"ミニ期先先(6月)",color:"#ff9800"}
   ];
-
-  let seriesHTML="";
-  SDEF.forEach(s=>{
-    const vals=dates.map(d=>hist[d][s.key]||0);
-    const maxV=Math.max(...vals,1), last=hist[ld][s.key]||0;
-    if(maxV<=1) return;
-    const W=300, H=36;
-    const pts=vals.map((v,i)=>{
-      const x=dates.length>1?i/(dates.length-1)*W:W/2;
-      const y=H-(v/maxV)*(H-4)-2;
-      return `${x},${y}`;
+  var seriesHTML="";
+  SDEF.forEach(function(s){
+    var vals=dates.map(function(d){return hist[d][s.key]||0;});
+    var maxV=Math.max.apply(null,vals);maxV=Math.max(maxV,1);
+    var last=hist[ld2][s.key]||0;
+    if(maxV<=1)return;
+    var W=300,H=36;
+    var pts=vals.map(function(v,i){
+      var x=dates.length>1?i/(dates.length-1)*W:W/2;
+      var y=H-(v/maxV)*(H-4)-2;
+      return x+","+y;
     }).join(" ");
-    seriesHTML+=`<div style="margin-bottom:1px">
-      <div style="display:flex;align-items:center">
-        <div style="width:38px;font-size:7px;color:${s.color};text-align:right;padding-right:3px;flex-shrink:0">${maxV.toLocaleString()}-</div>
-        <div style="flex:1;border-bottom:1px solid #2a3a50">
-          <div style="font-size:7px;color:#556;padding-left:2px">${s.label}</div>
-          <svg width="100%" height="${H}" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
-            <polyline points="${pts}" fill="none" stroke="${s.color}" stroke-width="1.5"/>
-          </svg>
-          <div style="font-size:7px;color:#556;padding-left:2px">0-</div>
-        </div>
-        <div style="width:44px;text-align:right;font-size:10px;color:${last>0?s.color:"#444"};font-weight:700;padding-left:3px;flex-shrink:0">${last>0?last.toLocaleString():"-"}</div>
-      </div>
-    </div>`;
+    seriesHTML+="<div style='margin-bottom:1px'><div style='display:flex;align-items:center'>"
+      +"<div style='width:38px;font-size:7px;color:"+s.color+";text-align:right;padding-right:3px;flex-shrink:0'>"+maxV.toLocaleString()+"-</div>"
+      +"<div style='flex:1;border-bottom:1px solid #2a3a50'>"
+      +"<div style='font-size:7px;color:#556;padding-left:2px'>"+s.label+"</div>"
+      +"<svg width='100%' height='"+H+"' viewBox='0 0 "+W+" "+H+"' preserveAspectRatio='none'>"
+      +"<polyline points='"+pts+"' fill='none' stroke='"+s.color+"' stroke-width='1.5'/></svg>"
+      +"<div style='font-size:7px;color:#556;padding-left:2px'>0-</div></div>"
+      +"<div style='width:44px;text-align:right;font-size:10px;color:"+(last>0?s.color:"#444")+";font-weight:700;padding-left:3px;flex-shrink:0'>"+(last>0?last.toLocaleString():"-")+"</div>"
+      +"</div></div>";
   });
-
-  const xLabels=dates.filter((_,i)=>i%Math.max(1,Math.floor(dates.length/6))===0).map(d=>d.slice(5).replace("-","/")).join(" &nbsp; ");
-
-  return `<div style="background:#1a1a2e;padding:10px 6px;color:#fff">
-    <div style="font-weight:700;font-size:13px;margin-bottom:2px">GSAX 先物取引量　${ld}現在</div>
-    <div style="font-size:8px;color:#445;margin-bottom:4px">※JPX日次データより自動集計（${dates.length}営業日分）</div>
-    ${seriesHTML}
-    <div style="font-size:7px;color:#888;margin-top:4px;padding-left:38px">${xLabels}</div>
-  </div>`;
+  var step=Math.max(1,Math.floor(dates.length/6));
+  var xLabels=dates.filter(function(_,i){return i%step===0;}).map(function(d){return d.slice(5).replace("-","/");}).join("  ");
+  return "<div style='background:#1a1a2e;padding:10px 6px;color:#fff'>"
+    +"<div style='font-weight:700;font-size:13px;margin-bottom:2px'>GSAX 先物取引量 "+ld2+"現在</div>"
+    +"<div style='font-size:8px;color:#445;margin-bottom:4px'>JPX日次データより自動集計（"+dates.length+"営業日分）</div>"
+    +seriesHTML
+    +"<div style='font-size:7px;color:#888;margin-top:4px;padding-left:38px'>"+xLabels+"</div></div>";
 }
 
 function makeChart4(){
-  const futHist = liveData?.fut_oi_history || {
-    "2026-03-27": {NK225_2606:-13190,NK225_2609:27,MINI_2604:10000,MINI_2605:0,MINI_2606:0,TOPIX_2606:-30704,TOPIX_2609:-600},
-    "2026-04-03": {NK225_2606:-6893,NK225_2609:27,MINI_2604:9000,MINI_2605:0,MINI_2606:0,TOPIX_2606:11258,TOPIX_2609:-600}
+  var futHist=liveData&&liveData.fut_oi_history?liveData.fut_oi_history:{
+    "2026-03-27":{NK225_2606:-13190,NK225_2609:27,MINI_2604:10000,MINI_2605:0,MINI_2606:0,TOPIX_2606:-30704,TOPIX_2609:-600},
+    "2026-04-03":{NK225_2606:-6893,NK225_2609:27,MINI_2604:9000,MINI_2605:0,MINI_2606:0,TOPIX_2606:11258,TOPIX_2609:-600}
   };
+  var dates=Object.keys(futHist).sort();
+  if(!dates.length)return "<div style='padding:24px;color:#888;text-align:center'>データなし</div>";
 
-  const dates = Object.keys(futHist).sort();
-  if(!dates.length) return "<div style='padding:24px;color:#888;text-align:center'>データなし</div>";
-
-  const SERIES = [
+  var SERIES=[
     {id:"near",label:"期近(2606)",color:"#1976d2",
      getX:function(d){return d.NK225_2606||0;},
      getY:function(d){return d.TOPIX_2606||0;}},
@@ -367,155 +289,127 @@ function makeChart4(){
      getX:function(d){return d.NK225_2609||0;},
      getY:function(d){return d.TOPIX_2609||0;}},
     {id:"mini",label:"mini換算(÷10)",color:"#388e3c",
-     getX:function(d){return ((d.MINI_2604||0)+(d.MINI_2605||0)+(d.MINI_2606||0))/10;},
+     getX:function(d){return((d.MINI_2604||0)+(d.MINI_2605||0)+(d.MINI_2606||0))/10;},
      getY:function(d){return 0;}}
   ];
 
-  var allX=[0], allY=[0];
+  var allX=[0],allY=[0];
   dates.forEach(function(dt){
     var d=futHist[dt];
     SERIES.forEach(function(s){allX.push(s.getX(d));allY.push(s.getY(d));});
   });
-
-  var xMin=Math.min.apply(null,allX), xMax=Math.max.apply(null,allX);
-  var yMin=Math.min.apply(null,allY), yMax=Math.max.apply(null,allY);
+  var xMin=Math.min.apply(null,allX),xMax=Math.max.apply(null,allX);
+  var yMin=Math.min.apply(null,allY),yMax=Math.max.apply(null,allY);
   var xPad=Math.max((xMax-xMin)*0.2,3000);
   var yPad=Math.max((yMax-yMin)*0.2,3000);
-  var X0=xMin-xPad, X1=xMax+xPad, Y0=yMin-yPad, Y1=yMax+yPad;
-
-  var W=300, H=240, PL=52, PR=12, PT=18, PB=36;
-  var CW=W-PL-PR, CH=H-PT-PB;
+  var X0=xMin-xPad,X1=xMax+xPad,Y0=yMin-yPad,Y1=yMax+yPad;
+  var W=300,H=240,PL=52,PR=12,PT=18,PB=36;
+  var CW=W-PL-PR,CH=H-PT-PB;
 
   function px(x){return PL+(x-X0)/(X1-X0)*CW;}
   function py(y){return PT+CH-(y-Y0)/(Y1-Y0)*CH;}
 
-  var zx=Math.round(px(0)), zy=Math.round(py(0));
+  var zx=Math.round(px(0)),zy=Math.round(py(0));
+  var steps=[500,1000,2000,5000,10000,20000,50000];
+  var xStep=steps[0],yStep=steps[0];
+  for(var i=0;i<steps.length;i++){if((X1-X0)/steps[i]<8){xStep=steps[i];break;}}
+  for(var i=0;i<steps.length;i++){if((Y1-Y0)/steps[i]<8){yStep=steps[i];break;}}
 
-  // グリッドライン（固定ステップ）
-  function makeGridStep(range){
-    var steps=[500,1000,2000,5000,10000,20000,50000];
-    for(var i=0;i<steps.length;i++){if(range/steps[i]<8)return steps[i];}
-    return 50000;
+  var grid="";
+  for(var v=Math.ceil(X0/xStep)*xStep;v<=X1;v+=xStep){
+    var gx=Math.round(px(v));
+    grid+="<line x1='"+gx+"' y1='"+PT+"' x2='"+gx+"' y2='"+(PT+CH)+"' stroke='#eee' stroke-width='1'/>";
+    grid+="<text x='"+gx+"' y='"+(PT+CH+11)+"' text-anchor='middle' font-size='7' fill='#999'>"+(v/1000).toFixed(0)+"k</text>";
   }
-  var xStep=makeGridStep(X1-X0), yStep=makeGridStep(Y1-Y0);
-
-  var gridLines="";
-  var v, x, y;
-  for(v=Math.ceil(X0/xStep)*xStep; v<=X1; v+=xStep){
-    x=Math.round(px(v));
-    gridLines+="<line x1='"+x+"' y1='"+PT+"' x2='"+x+"' y2='"+(PT+CH)+"' stroke='#eee' stroke-width='1'/>";
-    gridLines+="<text x='"+x+"' y='"+(PT+CH+11)+"' text-anchor='middle' font-size='7' fill='#999'>"+(v/1000).toFixed(0)+"k</text>";
-  }
-  for(v=Math.ceil(Y0/yStep)*yStep; v<=Y1; v+=yStep){
-    y=Math.round(py(v));
-    gridLines+="<line x1='"+PL+"' y1='"+y+"' x2='"+(PL+CW)+"' y2='"+y+"' stroke='#eee' stroke-width='1'/>";
-    gridLines+="<text x='"+(PL-4)+"' y='"+(y+3)+"' text-anchor='end' font-size='7' fill='#999'>"+(v/1000).toFixed(0)+"k</text>";
+  for(var v=Math.ceil(Y0/yStep)*yStep;v<=Y1;v+=yStep){
+    var gy=Math.round(py(v));
+    grid+="<line x1='"+PL+"' y1='"+gy+"' x2='"+(PL+CW)+"' y2='"+gy+"' stroke='#eee' stroke-width='1'/>";
+    grid+="<text x='"+(PL-4)+"' y='"+(gy+3)+"' text-anchor='end' font-size='7' fill='#999'>"+(v/1000).toFixed(0)+"k</text>";
   }
 
-  var seriesSVG="";
+  var svg="";
   SERIES.forEach(function(s){
-    var points=dates.map(function(dt){
-      return {x:Math.round(px(s.getX(futHist[dt]))*10)/10, y:Math.round(py(s.getY(futHist[dt]))*10)/10, date:dt};
+    var pts=dates.map(function(dt){
+      return{x:Math.round(px(s.getX(futHist[dt]))*10)/10,y:Math.round(py(s.getY(futHist[dt]))*10)/10};
     });
-    // 折れ線
-    if(points.length>1){
-      var pathD=points.map(function(p,i){return (i===0?"M":"L")+p.x+","+p.y;}).join(" ");
-      seriesSVG+="<path d='"+pathD+"' fill='none' stroke='"+s.color+"' stroke-width='2' opacity='0.6'/>";
+    if(pts.length>1){
+      var pd=pts.map(function(p,i){return(i===0?"M":"L")+p.x+","+p.y;}).join(" ");
+      svg+="<path d='"+pd+"' fill='none' stroke='"+s.color+"' stroke-width='2' opacity='0.7'/>";
     }
-    // 過去点（空円）
-    points.slice(0,-1).forEach(function(p){
-      seriesSVG+="<circle cx='"+p.x+"' cy='"+p.y+"' r='4' fill='white' stroke='"+s.color+"' stroke-width='1.5'/>";
-    });
-    // 最新点（実円）
-    var lp=points[points.length-1];
-    seriesSVG+="<circle cx='"+lp.x+"' cy='"+lp.y+"' r='6' fill='"+s.color+"' fill-opacity='0.9' stroke='white' stroke-width='1'/>";
-    seriesSVG+="<text x='"+(lp.x+8)+"' y='"+(lp.y+4)+"' font-size='8' fill='"+s.color+"' font-weight='700'>"+s.label+"</text>";
+    for(var i=0;i<pts.length-1;i++){
+      svg+="<circle cx='"+pts[i].x+"' cy='"+pts[i].y+"' r='4' fill='white' stroke='"+s.color+"' stroke-width='1.5'/>";
+    }
+    var lp=pts[pts.length-1];
+    svg+="<circle cx='"+lp.x+"' cy='"+lp.y+"' r='6' fill='"+s.color+"' fill-opacity='0.9' stroke='white' stroke-width='1'/>";
+    svg+="<text x='"+(lp.x+8)+"' y='"+(lp.y+4)+"' font-size='8' fill='"+s.color+"' font-weight='700'>"+s.label+"</text>";
   });
 
-  // 凡例HTML
-  var legendHTML=SERIES.map(function(s){
-    return "<span style='margin-right:10px;font-size:9px;color:"+s.color+"'>● "+s.label+"</span>";
+  var legend=SERIES.map(function(s){
+    return "<span style='margin-right:10px;font-size:9px;color:"+s.color+"'>&#9679; "+s.label+"</span>";
   }).join("");
+  var dl=dates.length>1?dates[0].slice(5)+" 〜 "+dates[dates.length-1].slice(5):dates[0].slice(5);
 
-  // 日付ラベル（X軸下）
-  var dateLabel=dates.length>1 ? dates[0].slice(5)+" 〜 "+dates[dates.length-1].slice(5) : dates[0].slice(5);
-
-  return "<div style='background:#fff;padding:10px 6px'>"
-    +"<div style='font-weight:700;font-size:11px;text-align:center;margin-bottom:2px'>Goldman Sachs — 先物建玉推移</div>"
-    +"<div style='font-size:9px;text-align:center;color:#888;margin-bottom:4px'>"+dateLabel+"（"+dates.length+"週分）</div>"
+  return "<div class='ci'>"
+    +"<div style='font-weight:700;font-size:11px;text-align:center;margin-bottom:2px'>Goldman Sachs ― 先物建玉推移</div>"
+    +"<div style='font-size:9px;text-align:center;color:#888;margin-bottom:4px'>"+dl+"（"+dates.length+"週分）</div>"
     +"<svg width='100%' viewBox='0 0 "+W+" "+H+"' style='overflow:visible'>"
-    +gridLines
+    +grid
     +"<line x1='"+PL+"' y1='"+zy+"' x2='"+(PL+CW)+"' y2='"+zy+"' stroke='#333' stroke-width='1.5'/>"
     +"<line x1='"+zx+"' y1='"+PT+"' x2='"+zx+"' y2='"+(PT+CH)+"' stroke='#333' stroke-width='1.5'/>"
-    +"<text x='"+(PL+CW/2)+"' y='"+(H-2)+"' text-anchor='middle' font-size='8' fill='#555'>Sell &lt;-- NK225 --&gt; Buy</text>"
-    +"<text x='10' y='"+(PT+CH/2)+"' text-anchor='middle' font-size='8' fill='#555' transform='rotate(-90,10,"+(PT+CH/2)+")'>"
-    +"Sell &lt;-- TOPIX --&gt; Buy</text>"
-    +seriesSVG
-    +"</svg>"
-    +"<div style='padding:4px 0;font-size:9px'>"+legendHTML+"</div>"
-    +"<div style='font-size:8px;color:#aaa;text-align:center'>● 最新  ○ 過去  ｜mini=large÷10換算</div>"
+    +"<text x='"+(PL+CW/2)+"' y='"+(H-2)+"' text-anchor='middle' font-size='8' fill='#555'>Sell &lt;&#8212; NK225 &#8212;&gt; Buy</text>"
+    +"<text x='10' y='"+(PT+CH/2)+"' text-anchor='middle' font-size='8' fill='#555' transform='rotate(-90,10,"+(PT+CH/2)+")'>Sell &lt;&#8212; TOPIX &#8212;&gt; Buy</text>"
+    +svg+"</svg>"
+    +"<div style='padding:4px 0;font-size:9px'>"+legend+"</div>"
+    +"<div style='font-size:8px;color:#aaa;text-align:center'>&#9679; 最新  &#9675; 過去  mini=large&#247;10換算</div>"
     +"</div>";
 }
 
+function setTab(id){currentTab=id;render();}
+function show(id){return currentTab==="all"||currentTab===id;}
 
-function render(loading=false, upd=""){
-  const hasData = !!liveData;
-  const grid = currentTab==="all" ? "display:grid;grid-template-columns:1fr 1fr;gap:12px" : "";
+function render(){
+  var loading=arguments[0]||false;
+  var upd=arguments[1]||"";
+  var hasData=!!liveData;
+  var statusHTML=loading?"<span style='color:#ffb74d'>&#9203; データ取得中...</span>"
+    :hasData?"<span style='color:#00e676'>&#10003; 自動取得データ</span><span style='color:#4a6080'> | </span><span style='color:#4a6060'>更新:"+upd+"</span>"
+    :"<span style='color:#ff5252'>&#9888; 取得失敗</span>";
 
-  let c1 = "";
-  if(show("c1")){
-    try{
-      c1 = '<div class="card"><div class="card-header" style="background:#1565c0">① 建玉残高（行使価格別）</div>' + makeChart1() + '</div>';
-    }catch(e){
-      c1 = '<div class="card"><div style="padding:16px;color:red;font-size:11px">グラフ1エラー: '+e.message+'</div></div>';
-    }
-  }
-  let c2 = "";
-  if(show("c2")){
-    try{
-      c2 = '<div class="card"><div class="card-header" style="background:#b71c1c">② 当日取引量（行使価格別）</div>' + makeChart2() + '</div>';
-    }catch(e){
-      c2 = '<div class="card"><div style="padding:16px;color:red;font-size:11px">グラフ2エラー: '+e.message+'</div></div>';
-    }
-  }
-  let c3 = "";
-  if(show("c3")){
-    try{
-      c3 = '<div class="card"><div class="card-header" style="background:#1b5e20">③ 先物取引量 時系列</div>' + makeChart3() + '</div>';
-    }catch(e){
-      c3 = '<div class="card"><div style="padding:16px;color:red;font-size:11px">グラフ3エラー: '+e.message+'</div></div>';
-    }
-  }
-  let c4 = "";
-  if(show("c4")){
-    try{
-      c4 = '<div class="card"><div class="card-header" style="background:#4a148c">④ 先物建玉残高（限月別）</div>' + makeChart4() + '</div>';
-    }catch(e){
-      c4 = '<div class="card"><div style="padding:16px;color:red;font-size:11px">グラフ④エラー: '+e.message+'</div></div>';
-    }
+  var tabs=[{id:"all",label:"全グラフ"},{id:"c1",label:"①建玉残高"},{id:"c2",label:"②取引量"},{id:"c3",label:"③時系列"},{id:"c4",label:"④先物建玉"}];
+  var tabHTML=tabs.map(function(t){
+    var active=currentTab===t.id;
+    return "<button onclick='setTab(\""+t.id+"\")' style='background:"+(active?"#00d4ff":"#1a2840")+";color:"+(active?"#0e1520":"#90a4ae")+";font-weight:"+(active?700:400)+"'>"+t.label+"</button>";
+  }).join("");
+  tabHTML+="<button onclick='location.reload(true)' style='background:#1a2840;color:#90a4ae;border:1px solid #2a3a50;margin-left:auto'>&#128260;</button>";
+
+  var grid=currentTab==="all"?"display:grid;grid-template-columns:1fr 1fr;gap:12px":"";
+
+  function safeCard(showFn,color,label,makeChart){
+    if(!showFn)return"";
+    try{return"<div class='card'><div class='hdr' style='background:"+color+"'>"+label+"</div>"+makeChart()+"</div>";}
+    catch(e){return"<div class='card'><div style='padding:12px;color:red;font-size:11px'>エラー: "+e.message+"</div></div>";}
   }
 
-  document.getElementById("app").innerHTML = `
-    ${makeHeader(loading, hasData, upd)}
-    ${makeTabs()}
-    <div style="${grid}">${c1}${c2}${c3}${c4}</div>
-    <div style="text-align:center;color:#2a4060;font-size:9px;margin-top:12px">※ JPX公開データに基づきます。投資判断の参考情報です。</div>
-  `;
+  var c1=safeCard(show("c1"),"#1565c0","① 建玉残高（行使価格別）",makeChart1);
+  var c2=safeCard(show("c2"),"#b71c1c","② 当日取引量（行使価格別）",makeChart2);
+  var c3=safeCard(show("c3"),"#1b5e20","③ 先物取引量 時系列",makeChart3);
+  var c4=safeCard(show("c4"),"#4a148c","④ 先物建玉推移（散布図）",makeChart4);
+
+  document.getElementById("root").innerHTML=
+    "<div style='text-align:center;margin-bottom:12px'>"
+    +"<div style='font-size:10px;letter-spacing:2px;color:#00d4ff;border:1px solid rgba(0,212,255,0.2);border-radius:20px;display:inline-block;padding:2px 14px;margin-bottom:6px'>GS DERIVATIVES DASHBOARD &middot; JPX自動取得</div>"
+    +"<h1 style='margin:0;font-size:16px;font-weight:700;background:linear-gradient(90deg,#00d4ff,#fff,#ff3d6b);-webkit-background-clip:text;-webkit-text-fill-color:transparent'>Goldman Sachs &#8212; 日経225 先物・オプション 建玉分析</h1>"
+    +"<div style='margin-top:4px;font-size:10px;display:flex;justify-content:center;align-items:center;gap:8px'>"+statusHTML+"</div></div>"
+    +"<div style='display:flex;gap:4px;margin-bottom:12px;flex-wrap:wrap;align-items:center'>"+tabHTML+"</div>"
+    +"<div style='"+grid+"'>"+c1+c2+c3+c4+"</div>"
+    +"<div style='text-align:center;color:#2a4060;font-size:9px;margin-top:12px'>※ JPX公開データに基づきます。投資判断の参考情報です。</div>";
 }
 
-function setTab(id){
-  currentTab = id;
-  render(false, liveData?.updated||"");
-}
-
-// 初期表示（ローディング中）
-render(true, "");
-
-// データ取得
+render(true,"");
 fetch(JSON_URL+"?t="+Date.now())
-  .then(r=>r.json())
-  .then(json=>{ liveData=json; render(false, json.updated||""); })
-  .catch(()=>{ render(false, ""); });
+  .then(function(r){return r.json();})
+  .then(function(j){liveData=j;render(false,j.updated||"");})
+  .catch(function(){render(false,"");});
 </script>
 </body>
 </html>
