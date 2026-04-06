@@ -1,5 +1,4 @@
 <!DOCTYPE html>
-
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
@@ -352,60 +351,123 @@ function makeChart3(){
 }
 
 function makeChart4(){
-  const maxAbs=Math.max(...FUTURES_OI.map(d=>Math.abs(d.value)),1);
-  const W=260,H=200,pad={l:60,r:20,t:20,b:30};
-  const bw=30, spacing=(W-pad.l-pad.r)/FUTURES_OI.length;
-  const zero=pad.t+H/2;
-  let bars="",labels="";
-  FUTURES_OI.forEach((d,i)=>{
-    const x=pad.l+i*spacing+spacing/2-bw/2;
-    const barH=Math.abs(d.value)/maxAbs*(H/2-4);
-    const y=d.value>=0?zero-barH:zero;
-    const color=d.value>0?BUY:d.value<0?SELL:"#bbb";
-    const labelY=d.value>=0?y-4:y+barH+10;
-    const sign=d.value>0?"+":"";
-    bars+=`<rect x="${x}" y="${y}" width="${bw}" height="${Math.max(barH,1)}" fill="${color}" rx="2"/>`;
-    bars+=`<text x="${x+bw/2}" y="${labelY}" text-anchor="middle" font-size="8" fill="${color}">${d.value!==0?sign+d.value.toLocaleString():"0"}</text>`;
-    labels+=`<text x="${x+bw/2}" y="${pad.t+H+pad.b-5}" text-anchor="middle" font-size="7" fill="#555">${d.name}</text>`;
+  const futHist = ld?.fut_oi_history || {
+    "2026-03-27": {NK225_2606:-13190,NK225_2609:27,MINI_2604:10000,MINI_2605:0,MINI_2606:0,TOPIX_2606:-30704,TOPIX_2609:-600},
+    "2026-04-03": {NK225_2606:-6893,NK225_2609:27,MINI_2604:9000,MINI_2605:0,MINI_2606:0,TOPIX_2606:11258,TOPIX_2609:-600}
+  };
+
+  const dates = Object.keys(futHist).sort();
+  if(!dates.length) return `<div style="padding:24px;color:#888;text-align:center">データなし</div>`;
+
+  // 3シリーズ定義
+  // 期近: NK225大2606 vs TOPIX2606
+  // 期先: NK225大2609 vs TOPIX2609
+  // Mini換算: (MINI_2604+MINI_2605)/10 vs 0（TOPIX miniなし）
+  const SERIES = [
+    { id:"near", label:"期近(2606)", color:"#1976d2",
+      getX: d => d.NK225_2606 || 0,
+      getY: d => d.TOPIX_2606 || 0 },
+    { id:"far",  label:"期先(2609)", color:"#d32f2f",
+      getX: d => d.NK225_2609 || 0,
+      getY: d => d.TOPIX_2609 || 0 },
+    { id:"mini", label:"mini換算(÷10)", color:"#388e3c",
+      getX: d => ((d.MINI_2604||0)+(d.MINI_2605||0)+(d.MINI_2606||0))/10,
+      getY: d => 0 },
+  ];
+
+  // 全データ点を集めてスケール計算
+  const allX=[], allY=[];
+  dates.forEach(dt=>{
+    const d=futHist[dt];
+    SERIES.forEach(s=>{ allX.push(s.getX(d)); allY.push(s.getY(d)); });
   });
-  return `<div class="chart-inner">
-    <div style="font-weight:700;font-size:11px;text-align:center">Goldman_Sachs_Japan_CoLtd — 2026-03-21</div>
-    <div style="font-size:10px;text-align:center;color:#555;margin-bottom:6px">225 Futures Position（売越=マイナス/買越=プラス）</div>
-    <svg width="100%" viewBox="0 0 ${W} ${pad.t+H+pad.b}" style="overflow:visible">
-      <line x1="${pad.l}" y1="${zero}" x2="${W-pad.r}" y2="${zero}" stroke="#333" stroke-width="2"/>
-      ${bars}${labels}
+  allX.push(0); allY.push(0);
+  const xMin=Math.min(...allX), xMax=Math.max(...allX);
+  const yMin=Math.min(...allY), yMax=Math.max(...allY);
+  const xPad=(xMax-xMin)*0.15||5000, yPad=(yMax-yMin)*0.15||5000;
+  const X0=xMin-xPad, X1=xMax+xPad, Y0=yMin-yPad, Y1=yMax+yPad;
+
+  const W=300, H=240;
+  const PL=55, PR=15, PT=20, PB=38;
+  const CW=W-PL-PR, CH=H-PT-PB;
+
+  function px(x){ return PL + (x-X0)/(X1-X0)*CW; }
+  function py(y){ return PT + CH - (y-Y0)/(Y1-Y0)*CH; }
+
+  // 0軸の位置
+  const zx=px(0), zy=py(0);
+
+  // グリッド・軸ラベル生成
+  function niceStep(range){ const t=Math.pow(10,Math.floor(Math.log10(range/4))); const m=[1,2,5]; let best=t; m.forEach(f=>{if(Math.abs(range/(t*f)-4)<Math.abs(range/best-4))best=t*f;}); return best; }
+  const xStep=niceStep(X1-X0), yStep=niceStep(Y1-Y0);
+
+  let gridLines="";
+  for(let v=Math.ceil(X0/xStep)*xStep; v<=X1; v+=xStep){
+    const x=px(v);
+    gridLines+=`<line x1="${x}" y1="${PT}" x2="${x}" y2="${PT+CH}" stroke="#eee" stroke-width="1"/>`;
+    gridLines+=`<text x="${x}" y="${PT+CH+12}" text-anchor="middle" font-size="7" fill="#999">${(v/1000).toFixed(0)}k</text>`;
+  }
+  for(let v=Math.ceil(Y0/yStep)*yStep; v<=Y1; v+=yStep){
+    const y=py(v);
+    gridLines+=`<line x1="${PL}" y1="${y}" x2="${PL+CW}" y2="${y}" stroke="#eee" stroke-width="1"/>`;
+    gridLines+=`<text x="${PL-4}" y="${y+3}" text-anchor="end" font-size="7" fill="#999">${(v/1000).toFixed(0)}k</text>`;
+  }
+
+  // 各シリーズ描画
+  let seriesSVG="";
+  SERIES.forEach(s=>{
+    const points = dates.map(dt=>({
+      x: px(s.getX(futHist[dt])),
+      y: py(s.getY(futHist[dt])),
+      date: dt
+    }));
+    // 折れ線
+    if(points.length>1){
+      const pathD = points.map((p,i)=>(i===0?`M${p.x},${p.y}`:`L${p.x},${p.y}`)).join(" ");
+      seriesSVG+=`<path d="${pathD}" fill="none" stroke="${s.color}" stroke-width="1.5" opacity="0.7"/>`;
+    }
+    // 過去点：小さい×マーク
+    points.slice(0,-1).forEach(p=>{
+      seriesSVG+=`<circle cx="${p.x}" cy="${p.y}" r="2.5" fill="none" stroke="${s.color}" stroke-width="1.2"/>`;
+    });
+    // 最新点：実線の小円
+    const lp=points[points.length-1];
+    seriesSVG+=`<circle cx="${lp.x}" cy="${lp.y}" r="5" fill="${s.color}" fill-opacity="0.85" stroke="${s.color}" stroke-width="1.5"/>`;
+    // 最新値ラベル
+    seriesSVG+=`<text x="${lp.x+7}" y="${lp.y+3}" font-size="7" fill="${s.color}" font-weight="700">${s.label}</text>`;
+  });
+
+  // 凡例
+  const legendItems = SERIES.map((s,i)=>`
+    <g transform="translate(${i*95},0)">
+      <line x1="0" y1="6" x2="14" y2="6" stroke="${s.color}" stroke-width="1.5"/>
+      <circle cx="7" cy="6" r="3" fill="${s.color}"/>
+      <text x="17" y="10" font-size="8" fill="#555">${s.label}</text>
+    </g>`).join("");
+
+  return `<div style="background:#fff;padding:10px 6px">
+    <div style="font-weight:700;font-size:11px;text-align:center;margin-bottom:2px">Goldman Sachs — 先物建玉推移</div>
+    <div style="font-size:9px;text-align:center;color:#888;margin-bottom:4px">${dates[0].slice(5)} 〜 ${dates[dates.length-1].slice(5)}（${dates.length}週分）</div>
+    <svg width="100%" viewBox="0 0 ${W} ${H}" style="overflow:visible">
+      <!-- グリッド -->
+      ${gridLines}
+      <!-- 0軸 -->
+      <line x1="${PL}" y1="${zy}" x2="${PL+CW}" y2="${zy}" stroke="#333" stroke-width="1.5"/>
+      <line x1="${zx}" y1="${PT}" x2="${zx}" y2="${PT+CH}" stroke="#333" stroke-width="1.5"/>
+      <!-- 軸ラベル -->
+      <text x="${PL+CW/2}" y="${H-2}" text-anchor="middle" font-size="8" fill="#555">Sell ←— NK225 —→ Buy</text>
+      <text x="10" y="${PT+CH/2}" text-anchor="middle" font-size="8" fill="#555" transform="rotate(-90,10,${PT+CH/2})">Sell ←— TOPIX —→ Buy</text>
+      <!-- シリーズ -->
+      ${seriesSVG}
     </svg>
-    <div style="display:flex;justify-content:center;gap:20px;font-size:10px;margin-top:4px">
-      <span style="color:${SELL}">■ 売り越し</span><span style="color:${BUY}">■ 買い越し</span>
-    </div>
+    <!-- 凡例 -->
+    <svg width="100%" height="18" viewBox="0 0 285 18">
+      ${legendItems}
+    </svg>
+    <div style="font-size:8px;color:#aaa;text-align:center;margin-top:2px">● 最新  ○ 過去  ｜mini = large÷10換算</div>
   </div>`;
 }
 
-function makeHeader(loading, hasData, upd){
-  return `<div style="text-align:center;margin-bottom:12px">
-    <div style="display:flex;justify-content:flex-end;margin-bottom:4px">
-  <button onclick="location.reload(true)" style="background:#1a2840;color:#90a4ae;border:1px solid #2a3a50;border-radius:6px;padding:4px 10px;font-size:10px">🔄 更新</button>
-</div>
-<div style="font-size:10px;letter-spacing:2px;color:#00d4ff;border:1px solid rgba(0,212,255,0.2);border-radius:20px;display:inline-block;padding:2px 14px;margin-bottom:6px">GS DERIVATIVES DASHBOARD · JPX自動取得</div>
-    <h1 style="margin:0;font-size:16px;font-weight:700;background:linear-gradient(90deg,#00d4ff,#fff,#ff3d6b);-webkit-background-clip:text;-webkit-text-fill-color:transparent">Goldman Sachs — 日経225 先物・オプション 建玉分析</h1>
-    <div style="margin-top:4px;font-size:10px;display:flex;justify-content:center;align-items:center;gap:8px">
-      ${loading
-        ? '<span style="color:#ffb74d">⏳ データ取得中...</span>'
-        : hasData
-          ? `<span style="color:#00e676">✅ 自動取得データ</span><span style="color:#4a6080">|</span><span style="color:#4a6060">更新:${upd}</span>`
-          : '<span style="color:#ff5252">⚠️ 取得失敗</span>'}
-    </div>
-  </div>`;
-}
-
-function makeTabs(){
-  const tabs=[{id:"all",label:"全グラフ"},{id:"c1",label:"①建玉残高"},{id:"c2",label:"②取引量"},{id:"c3",label:"③時系列"},{id:"c4",label:"④先物建玉"}];
-  return `<div style="display:flex;gap:4px;margin-bottom:12px;flex-wrap:wrap">
-    ${tabs.map(t=>`<button onclick="setTab('${t.id}')" style="background:${currentTab===t.id?"#00d4ff":"#1a2840"};color:${currentTab===t.id?"#0e1520":"#90a4ae"};font-weight:${currentTab===t.id?700:400}">${t.label}</button>`).join("")}
-  </div>`;
-}
-
-function show(id){ return currentTab==="all"||currentTab===id; }
 
 function render(loading=false, upd=""){
   const hasData = !!liveData;
@@ -438,6 +500,5 @@ fetch(JSON_URL+"?t="+Date.now())
   .then(json=>{ liveData=json; render(false, json.updated||""); })
   .catch(()=>{ render(false, ""); });
 </script>
-
 </body>
 </html>
