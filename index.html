@@ -8,284 +8,315 @@
 <title>GS Derivatives Dashboard</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:#0e1520;font-family:'Helvetica Neue',sans-serif;color:#fff;padding:12px}
-button{cursor:pointer;border:none;border-radius:6px;padding:5px 11px;font-size:11px}
+body{background:#0e1520;font-family:'Helvetica Neue',sans-serif;color:#fff;min-height:100vh;padding:12px}
+button{cursor:pointer;border:none;border-radius:6px;padding:5px 11px;font-size:11px;font-family:inherit}
+textarea,input,select{font-family:inherit}
 .card{border-radius:8px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,0.5);margin-bottom:12px}
 .hdr{padding:5px 10px;font-size:10px;font-weight:700;color:#fff}
 .ci{background:#fff;padding:10px 6px}
+#tip{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border:1px solid #bbb;border-radius:8px;padding:10px 14px;font-size:12px;z-index:999;box-shadow:0 4px 12px rgba(0,0,0,.15);pointer-events:none;color:#333;display:none}
 </style>
 </head>
 <body>
 <div id="root"><div style="color:#ffb74d;padding:20px;text-align:center">読み込み中...</div></div>
-<div id="tip" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border:1px solid #bbb;border-radius:8px;padding:10px 14px;font-size:12px;z-index:999;box-shadow:0 4px 12px rgba(0,0,0,.15);pointer-events:none;color:#333;display:none"></div>
+<div id="tip"></div>
 <script>
-// エラーを画面に表示
-window.onerror = function(msg, url, line, col, err) {
-  document.getElementById("root").innerHTML =
-    "<div style='background:#c62828;color:#fff;padding:16px;border-radius:8px;margin:12px 0;font-size:12px'>"
-    + "<b>JS Error (line "+line+"):</b><br>" + msg
-    + (err && err.stack ? "<br><pre style='font-size:9px;margin-top:8px;white-space:pre-wrap'>"+err.stack+"</pre>" : "")
-    + "</div>";
-  return true;
-};
-</script>
-<script>
-var JSON_URL="https://hiroshindoh.github.io/jpx-gs-tracker/gs_data.json";
-var BUY="#1976d2",SELL="#d32f2f";
-var ATM_LINE=54000;
-var liveData=null,currentTab="all";
-var predState={nk225:"down",topix:"up"};
-var c1tips={};
+var JSON_URL = "https://hiroshindoh.github.io/jpx-gs-tracker/gs_data.json";
+var BUY = "#1976d2", SELL = "#d32f2f", ATM_LINE = 54000;
+var liveData = null, currentTab = "all";
+var predNK = "down", predTX = "up";
 
-var FALLBACK_OI={date:"2026-03-13",gs:[
+var FALLBACK = {date:"2026-03-13",gs:[
   {strike:54000,type:"CALL",side:"Buy",qty:150},
   {strike:54000,type:"PUT",side:"Buy",qty:196},
   {strike:53500,type:"PUT",side:"Buy",qty:12},
   {strike:53375,type:"PUT",side:"Sell",qty:6}
 ],strikes:{min:53125,max:54125}};
 
-function showTip(s,bl,bv,sl,sv){
-  var t=document.getElementById("tip");
-  t.innerHTML="<b>"+s.toLocaleString()+"円</b><br><span style='color:"+BUY+"'>"+bl+": "+bv+"枚</span><br><span style='color:"+SELL+"'>"+sl+": "+sv+"枚</span>";
-  t.style.display="block";
+// ── ツールチップ ──
+function showTip(s, bl, bv, sl, sv) {
+  var t = document.getElementById("tip");
+  t.innerHTML = "<b>" + s.toLocaleString() + "円</b><br>"
+    + "<span style='color:" + BUY + "'>" + bl + ": " + bv + "枚</span><br>"
+    + "<span style='color:" + SELL + "'>" + sl + ": " + sv + "枚</span>";
+  t.style.display = "block";
 }
-function hideTip(){document.getElementById("tip").style.display="none";}
-function doC1Tip(s,side){
-  var d=c1tips[s]||{cb:0,cs:0,pb:0,ps:0};
-  if(side===0)showTip(s,"Buy",d.cb,"Sell",d.cs);
-  else showTip(s,"Buy",d.pb,"Sell",d.ps);
+function hideTip() { document.getElementById("tip").style.display = "none"; }
+
+// ── localStorage ──
+function loadRecs() {
+  try { var d = localStorage.getItem("gs_predictions"); return d ? JSON.parse(d) : []; }
+  catch(e) { return []; }
+}
+function saveRecs(r) {
+  try { localStorage.setItem("gs_predictions", JSON.stringify(r)); }
+  catch(e) { console.log("storage error", e); }
 }
 
-function loadRecs(){
-  try{var d=localStorage.getItem("gs_predictions");return d?JSON.parse(d):[];}
-  catch(e){return[];}
-}
-function saveRecs(r){
-  try{localStorage.setItem("gs_predictions",JSON.stringify(r));}
-  catch(e){console.log("storage error",e);}
-}
-
-function buildSnapshot(oi){
-  var mn=oi.strikes&&oi.strikes.min?oi.strikes.min:51000;
-  var mx=oi.strikes&&oi.strikes.max?oi.strikes.max:56000;
-  var map={};
-  for(var s=50000;s<=57000;s+=125){
-    map[s]={strike:s,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:s>=mn&&s<=mx};
+// ── スナップショット構築 ──
+function buildSnapshot(oi) {
+  var mn = (oi.strikes && oi.strikes.min) ? oi.strikes.min : 51000;
+  var mx = (oi.strikes && oi.strikes.max) ? oi.strikes.max : 56000;
+  var map = {};
+  for (var s = 50000; s <= 57000; s += 125) {
+    map[s] = {callBuy:0, callSell:0, putBuy:0, putSell:0, disclosed: s >= mn && s <= mx};
   }
-  var gs=oi.gs||[];
-  for(var i=0;i<gs.length;i++){
-    var d=gs[i];
-    if(!map[d.strike])map[d.strike]={strike:d.strike,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:true};
-    if(d.type==="CALL"&&d.side==="Buy")map[d.strike].callBuy=d.qty;
-    if(d.type==="CALL"&&d.side==="Sell")map[d.strike].callSell=d.qty;
-    if(d.type==="PUT"&&d.side==="Buy")map[d.strike].putBuy=d.qty;
-    if(d.type==="PUT"&&d.side==="Sell")map[d.strike].putSell=d.qty;
+  var gs = oi.gs || [];
+  for (var i = 0; i < gs.length; i++) {
+    var d = gs[i];
+    if (!map[d.strike]) map[d.strike] = {callBuy:0, callSell:0, putBuy:0, putSell:0, disclosed:true};
+    if (d.type === "CALL" && d.side === "Buy")  map[d.strike].callBuy  = d.qty;
+    if (d.type === "CALL" && d.side === "Sell") map[d.strike].callSell = d.qty;
+    if (d.type === "PUT"  && d.side === "Buy")  map[d.strike].putBuy   = d.qty;
+    if (d.type === "PUT"  && d.side === "Sell") map[d.strike].putSell  = d.qty;
   }
   return map;
 }
 
-function makeChart1(){
-  var cur=liveData&&liveData.oi?liveData.oi:FALLBACK_OI;
-  var hist=liveData&&liveData.oi_history?liveData.oi_history:[];
-  var ZCOL=["#fff9c4","#ffe0b2","#f3e5f5","#e8f5e9"];
-  var snaps=[];
-  for(var i=0;i<hist.length;i++){
-    var h=hist[i];
-    snaps.push({date:h.date,map:buildSnapshot(h),strikes:h.strikes,
-      color:ZCOL[i]||"#f5f5f5",
-      label:h.date&&h.date.length>=10?h.date.slice(5).replace("-","/"):h.date||"",
-      isCur:h.date===cur.date});
+// ── グラフ① DOM生成 ──
+function buildChart1() {
+  var cur = (liveData && liveData.oi) ? liveData.oi : FALLBACK;
+  var hist = (liveData && liveData.oi_history) ? liveData.oi_history : [];
+  var ZCOL = ["#fff9c4","#ffe0b2","#f3e5f5","#e8f5e9","#e3f2fd"];
+
+  var snaps = [];
+  for (var i = 0; i < hist.length; i++) {
+    snaps.push({
+      date: hist[i].date,
+      map: buildSnapshot(hist[i]),
+      strikes: hist[i].strikes,
+      color: ZCOL[i] || "#f5f5f5",
+      label: (hist[i].date && hist[i].date.length >= 10) ? hist[i].date.slice(5).replace("-","/") : hist[i].date || "",
+      isCur: hist[i].date === cur.date
+    });
   }
-  var curSnap=null;
-  for(var i=0;i<snaps.length;i++){if(snaps[i].isCur){curSnap=snaps[i];break;}}
-  if(!curSnap)curSnap={date:cur.date,map:buildSnapshot(cur),strikes:cur.strikes,
-    color:"#fffde7",
-    label:cur.date&&cur.date.length>=10?cur.date.slice(5).replace("-","/"):"03/13",
-    isCur:true};
-  var allS=[];
-  for(var s=51000;s<=57000;s+=125)allS.push(s);
-  var ct=0,pt=0;
-  var csKeys=Object.keys(curSnap.map);
-  for(var i=0;i<csKeys.length;i++){
-    ct+=curSnap.map[csKeys[i]].callBuy;
-    pt+=curSnap.map[csKeys[i]].putBuy;
-  }
-  var oldSnaps=[];
-  for(var i=0;i<snaps.length;i++){if(!snaps[i].isCur)oldSnaps.push(snaps[i]);}
-  for(var i=0;i<oldSnaps.length;i++){
-    var sKeys=Object.keys(oldSnaps[i].map);
-    for(var j=0;j<sKeys.length;j++){
-      var k=sKeys[j];
-      if(!curSnap.map[k]||curSnap.map[k].callBuy===0)ct+=oldSnaps[i].map[k].callBuy;
-      if(!curSnap.map[k]||curSnap.map[k].putBuy===0)pt+=oldSnaps[i].map[k].putBuy;
+  var curSnap = null;
+  for (var i = 0; i < snaps.length; i++) { if (snaps[i].isCur) { curSnap = snaps[i]; break; } }
+  if (!curSnap) curSnap = {
+    date: cur.date, map: buildSnapshot(cur), strikes: cur.strikes, color: "#fffde7",
+    label: (cur.date && cur.date.length >= 10) ? cur.date.slice(5).replace("-","/") : "03/13",
+    isCur: true
+  };
+
+  var oldSnaps = [];
+  for (var i = 0; i < snaps.length; i++) { if (!snaps[i].isCur) oldSnaps.push(snaps[i]); }
+
+  var ct = 0, pt = 0;
+  var ks = Object.keys(curSnap.map);
+  for (var i = 0; i < ks.length; i++) { ct += curSnap.map[ks[i]].callBuy; pt += curSnap.map[ks[i]].putBuy; }
+  for (var j = 0; j < oldSnaps.length; j++) {
+    var oks = Object.keys(oldSnaps[j].map);
+    for (var i = 0; i < oks.length; i++) {
+      var k = oks[i];
+      if (!curSnap.map[k] || curSnap.map[k].callBuy === 0) ct += oldSnaps[j].map[k].callBuy;
+      if (!curSnap.map[k] || curSnap.map[k].putBuy  === 0) pt += oldSnaps[j].map[k].putBuy;
     }
   }
-  var pcr=(ct+pt)>0?(pt/(ct+pt)*100).toFixed(2):"0.00";
-  var MAX=200,RH=11;
-  var pie="";
-  if(ct+pt>0){
-    var r=22,cx=28,cy=30,tot=ct+pt,a=(ct/tot)*2*Math.PI;
-    var x1=cx+r*Math.sin(a),y1=cy-r*Math.cos(a),lg=a>Math.PI?1:0,lr=r*0.58;
-    var clx=cx+lr*Math.sin(a/2),cly=cy-lr*Math.cos(a/2);
-    var pm=a+(2*Math.PI-a)/2,plx=cx+lr*Math.sin(pm),ply=cy-lr*Math.cos(pm);
-    pie="<svg width='115' height='62' viewBox='0 0 115 62'>"
-      +"<circle cx='"+cx+"' cy='"+cy+"' r='"+r+"' fill='#f5a623'/>"
-      +"<path d='M"+cx+","+cy+" L"+cx+","+(cy-r)+" A"+r+","+r+" 0 "+lg+",1 "+x1+","+y1+" Z' fill='#5b9bd5'/>"
-      +"<text x='"+clx+"' y='"+(cly-5)+"' text-anchor='middle' font-size='7' fill='#fff'>call</text>"
-      +"<text x='"+clx+"' y='"+(cly+5)+"' text-anchor='middle' font-size='9' font-weight='700' fill='#fff'>"+ct+"</text>"
-      +"<text x='"+plx+"' y='"+(ply-5)+"' text-anchor='middle' font-size='7' fill='#fff'>put</text>"
-      +"<text x='"+plx+"' y='"+(ply+5)+"' text-anchor='middle' font-size='9' font-weight='700' fill='#fff'>"+pt+"</text>"
-      +"<text x='60' y='22' font-size='8' font-weight='700' fill='#555'>PCR</text>"
-      +"<text x='60' y='36' font-size='12' font-weight='700' fill='"+BUY+"'>"+pcr+"%</text>"
-      +"</svg>";
+  var pcr = (ct + pt) > 0 ? (pt / (ct + pt) * 100).toFixed(2) : "0.00";
+  var MAX = 200, RH = 11;
+
+  var wrap = document.createElement("div");
+  wrap.className = "ci";
+  wrap.addEventListener("mouseleave", hideTip);
+
+  // タイトル + パイチャート
+  var titleRow = document.createElement("div");
+  titleRow.style.cssText = "display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:3px";
+  var titleLeft = document.createElement("div");
+  titleLeft.innerHTML = "<div style='font-weight:700;font-size:12px'>Goldman_Sachs_Japan_CoLtd</div>"
+    + "<div style='font-size:11px;color:#555'>建玉残高</div>";
+  titleRow.appendChild(titleLeft);
+  if (ct + pt > 0) {
+    var r=22, cx=28, cy=30, tot=ct+pt, a=(ct/tot)*2*Math.PI;
+    var x1=cx+r*Math.sin(a), y1=cy-r*Math.cos(a), lg=a>Math.PI?1:0, lr=r*0.58;
+    var clx=cx+lr*Math.sin(a/2), cly=cy-lr*Math.cos(a/2);
+    var pm=a+(2*Math.PI-a)/2, plx=cx+lr*Math.sin(pm), ply=cy-lr*Math.cos(pm);
+    var pie = document.createElementNS("http://www.w3.org/2000/svg","svg");
+    pie.setAttribute("width","115"); pie.setAttribute("height","62"); pie.setAttribute("viewBox","0 0 115 62");
+    pie.innerHTML = "<circle cx='" + cx + "' cy='" + cy + "' r='" + r + "' fill='#f5a623'/>"
+      + "<path d='M" + cx + "," + cy + " L" + cx + "," + (cy-r) + " A" + r + "," + r + " 0 " + lg + ",1 " + x1 + "," + y1 + " Z' fill='#5b9bd5'/>"
+      + "<text x='" + clx + "' y='" + (cly-5) + "' text-anchor='middle' font-size='7' fill='#fff'>call</text>"
+      + "<text x='" + clx + "' y='" + (cly+5) + "' text-anchor='middle' font-size='9' font-weight='700' fill='#fff'>" + ct + "</text>"
+      + "<text x='" + plx + "' y='" + (ply-5) + "' text-anchor='middle' font-size='7' fill='#fff'>put</text>"
+      + "<text x='" + plx + "' y='" + (ply+5) + "' text-anchor='middle' font-size='9' font-weight='700' fill='#fff'>" + pt + "</text>"
+      + "<text x='60' y='22' font-size='8' font-weight='700' fill='#555'>PCR</text>"
+      + "<text x='60' y='36' font-size='12' font-weight='700' fill='" + BUY + "'>" + pcr + "%</text>";
+    titleRow.appendChild(pie);
   }
-  var cd=[];
-  for(var i=0;i<allS.length;i++){
-    var strike=allS[i];
-    var d2=curSnap.map[strike]||{strike:strike,callBuy:0,callSell:0,putBuy:0,putSell:0};
-    var zones=[];
-    for(var j=0;j<snaps.length;j++){
-      var mn2=snaps[j].strikes&&snaps[j].strikes.min?snaps[j].strikes.min:0;
-      var mx2=snaps[j].strikes&&snaps[j].strikes.max?snaps[j].strikes.max:0;
-      if(strike>=mn2&&strike<=mx2)zones.push(snaps[j]);
+  wrap.appendChild(titleRow);
+
+  // スケール
+  var scale = document.createElement("div");
+  scale.style.cssText = "display:grid;grid-template-columns:1fr 68px 1fr;margin-bottom:2px";
+  scale.innerHTML = "<div style='display:flex;justify-content:space-between;font-size:7px;color:#888'><span>200</span><span>150</span><span>100</span><span>50</span><span>0</span></div>"
+    + "<div></div>"
+    + "<div style='display:flex;justify-content:space-between;font-size:7px;color:#888'><span>0</span><span>50</span><span>100</span><span>150</span><span>200</span></div>";
+  wrap.appendChild(scale);
+
+  // ヘッダー
+  var hdr = document.createElement("div");
+  hdr.style.cssText = "display:grid;grid-template-columns:1fr 68px 1fr;border-bottom:1px solid #ccc";
+  hdr.innerHTML = "<div style='text-align:center;background:#f5f5f5;font-size:11px;font-weight:700;padding:3px 0'>CALL</div>"
+    + "<div style='background:#f5f5f5'></div>"
+    + "<div style='text-align:center;background:#f5f5f5;font-size:11px;font-weight:700;padding:3px 0'>PUT</div>";
+  wrap.appendChild(hdr);
+
+  // 行
+  var allS = [];
+  for (var s = 51000; s <= 57000; s += 125) allS.push(s);
+  allS.reverse();
+
+  for (var si = 0; si < allS.length; si++) {
+    var strike = allS[si];
+    var isAtm = strike === ATM_LINE, BH = RH - 3;
+    var zones = [];
+    for (var j = 0; j < snaps.length; j++) {
+      var mn2 = snaps[j].strikes && snaps[j].strikes.min ? snaps[j].strikes.min : 0;
+      var mx2 = snaps[j].strikes && snaps[j].strikes.max ? snaps[j].strikes.max : 0;
+      if (strike >= mn2 && strike <= mx2) zones.push(snaps[j]);
     }
-    cd.push({strike:strike,callBuy:d2.callBuy,callSell:d2.callSell,putBuy:d2.putBuy,putSell:d2.putSell,zones:zones});
-  }
-  var data=cd.slice().reverse();
-  var rows="";
-  for(var i=0;i<data.length;i++){
-    var d=data[i];
-    var isAtm=d.strike===ATM_LINE,BH=RH-3;
-    var bg=d.zones&&d.zones.length>0?d.zones[d.zones.length-1].color:"#fff";
-    var lbl="";
-    for(var j=0;j<d.zones.length;j++){
-      var z=d.zones[j];
-      if(z.strikes&&z.strikes.max&&d.strike===z.strikes.max){
-        lbl+="<div style='position:absolute;left:0;top:"+(j*10)+"px;z-index:"+(10+j)+";font-size:7px;font-weight:700;color:#333;padding:0 4px;line-height:10px;pointer-events:none'>"
-          +"開示範囲（"+z.label+"）</div>";
+    var bg = zones.length > 0 ? zones[zones.length-1].color : "#fff";
+    var c2 = curSnap.map[strike] || {callBuy:0, callSell:0, putBuy:0, putSell:0};
+
+    var rowWrap = document.createElement("div");
+    rowWrap.style.position = "relative";
+
+    // 開示範囲ラベル
+    for (var j = 0; j < zones.length; j++) {
+      if (zones[j].strikes && zones[j].strikes.max === strike) {
+        var lbl = document.createElement("div");
+        lbl.style.cssText = "position:absolute;left:0;top:" + (j*10) + "px;z-index:" + (10+j) + ";font-size:7px;font-weight:700;color:#333;padding:0 4px;line-height:10px;pointer-events:none";
+        lbl.textContent = "開示範囲（" + zones[j].label + "）";
+        rowWrap.appendChild(lbl);
       }
     }
-    var oC="",oP="";
-    for(var j=0;j<oldSnaps.length;j++){
-      var o=oldSnaps[j].map[d.strike];
-      if(!o)continue;
-      if(o.callBuy>0)oC+="<div style='position:absolute;right:0;top:1px;height:"+BH+"px;width:"+Math.min(o.callBuy/MAX*100,100)+"%;background:rgba(25,118,210,0.25)'></div>";
-      if(o.callSell>0)oC+="<div style='position:absolute;right:"+Math.min(o.callBuy/MAX*100,100)+"%;top:1px;height:"+BH+"px;width:"+Math.min(o.callSell/MAX*100,100)+"%;background:rgba(211,47,47,0.25)'></div>";
-      if(o.putBuy>0)oP+="<div style='position:absolute;left:0;top:1px;height:"+BH+"px;width:"+Math.min(o.putBuy/MAX*100,100)+"%;background:rgba(25,118,210,0.25)'></div>";
-      if(o.putSell>0)oP+="<div style='position:absolute;left:"+Math.min(o.putBuy/MAX*100,100)+"%;top:1px;height:"+BH+"px;width:"+Math.min(o.putSell/MAX*100,100)+"%;background:rgba(211,47,47,0.25)'></div>";
+
+    var row = document.createElement("div");
+    row.style.cssText = "display:grid;grid-template-columns:1fr 68px 1fr;height:" + RH + "px";
+
+    // CALL側
+    var callDiv = document.createElement("div");
+    callDiv.style.cssText = "background:" + bg + ";position:relative;overflow:hidden;border-right:1px solid #ccc";
+    (function(s2, cb, cs) {
+      callDiv.addEventListener("mouseenter", function() { showTip(s2, "Buy", cb, "Sell", cs); });
+    })(strike, c2.callBuy, c2.callSell);
+    // 過去データ
+    for (var j = 0; j < oldSnaps.length; j++) {
+      var o = oldSnaps[j].map[strike];
+      if (o) {
+        if (o.callBuy > 0) { var d2 = document.createElement("div"); d2.style.cssText = "position:absolute;right:0;top:1px;height:" + BH + "px;width:" + Math.min(o.callBuy/MAX*100,100) + "%;background:rgba(25,118,210,0.25)"; callDiv.appendChild(d2); }
+        if (o.callSell > 0) { var d2 = document.createElement("div"); d2.style.cssText = "position:absolute;right:" + Math.min(o.callBuy/MAX*100,100) + "%;top:1px;height:" + BH + "px;width:" + Math.min(o.callSell/MAX*100,100) + "%;background:rgba(211,47,47,0.25)"; callDiv.appendChild(d2); }
+      }
     }
-    var c2=curSnap.map[d.strike]||{callBuy:0,callSell:0,putBuy:0,putSell:0};
-    c1tips[d.strike]={cb:c2.callBuy,cs:c2.callSell,pb:c2.putBuy,ps:c2.putSell};
-    var cBw=Math.min(c2.callBuy/MAX*100,100),cSw=Math.min(c2.callSell/MAX*100,100);
-    var pBw=Math.min(c2.putBuy/MAX*100,100),pSw=Math.min(c2.putSell/MAX*100,100);
-    var cB=c2.callBuy>0?"<div style='position:absolute;right:0;top:1px;height:"+BH+"px;width:"+cBw+"%;background:"+BUY+"'></div>":"";
-    var cS=c2.callSell>0?"<div style='position:absolute;right:"+cBw+"%;top:1px;height:"+BH+"px;width:"+cSw+"%;background:"+SELL+"'></div>":"";
-    var pB=c2.putBuy>0?"<div style='position:absolute;left:0;top:1px;height:"+BH+"px;width:"+pBw+"%;background:"+BUY+"'></div>":"";
-    var pS=c2.putSell>0?"<div style='position:absolute;left:"+pBw+"%;top:1px;height:"+BH+"px;width:"+pSw+"%;background:"+SELL+"'></div>":"";
-    rows+="<div style='position:relative'>"+lbl
-      +"<div style='display:grid;grid-template-columns:1fr 68px 1fr;height:"+RH+"px'>"
-      +"<div style='background:"+bg+";position:relative;overflow:hidden;border-right:1px solid #ccc'"
-      +" onmouseenter='doC1Tip("+d.strike+",0)'>"
-      +oC+cB+cS+"</div>"
-      +"<div style='height:"+RH+"px;display:flex;align-items:center;justify-content:center;font-size:7px;font-weight:"+(isAtm?700:400)+";color:#555;background:"+bg+"'>"+d.strike.toLocaleString()+"</div>"
-      +"<div style='background:"+bg+";position:relative;overflow:hidden;border-left:1px solid #ccc'"
-      +" onmouseenter='doC1Tip("+d.strike+",1)'>"
-      +oP+pB+pS+"</div>"
-      +"</div></div>";
+    if (c2.callBuy  > 0) { var d2 = document.createElement("div"); d2.style.cssText = "position:absolute;right:0;top:1px;height:" + BH + "px;width:" + Math.min(c2.callBuy/MAX*100,100) + "%;background:" + BUY; callDiv.appendChild(d2); }
+    if (c2.callSell > 0) { var d2 = document.createElement("div"); d2.style.cssText = "position:absolute;right:" + Math.min(c2.callBuy/MAX*100,100) + "%;top:1px;height:" + BH + "px;width:" + Math.min(c2.callSell/MAX*100,100) + "%;background:" + SELL; callDiv.appendChild(d2); }
+    row.appendChild(callDiv);
+
+    // 中央
+    var midDiv = document.createElement("div");
+    midDiv.style.cssText = "height:" + RH + "px;display:flex;align-items:center;justify-content:center;font-size:7px;font-weight:" + (isAtm?700:400) + ";color:#555;background:" + bg;
+    midDiv.textContent = strike.toLocaleString();
+    row.appendChild(midDiv);
+
+    // PUT側
+    var putDiv = document.createElement("div");
+    putDiv.style.cssText = "background:" + bg + ";position:relative;overflow:hidden;border-left:1px solid #ccc";
+    (function(s2, pb, ps) {
+      putDiv.addEventListener("mouseenter", function() { showTip(s2, "Buy", pb, "Sell", ps); });
+    })(strike, c2.putBuy, c2.putSell);
+    for (var j = 0; j < oldSnaps.length; j++) {
+      var o = oldSnaps[j].map[strike];
+      if (o) {
+        if (o.putBuy  > 0) { var d2 = document.createElement("div"); d2.style.cssText = "position:absolute;left:0;top:1px;height:" + BH + "px;width:" + Math.min(o.putBuy/MAX*100,100) + "%;background:rgba(25,118,210,0.25)"; putDiv.appendChild(d2); }
+        if (o.putSell > 0) { var d2 = document.createElement("div"); d2.style.cssText = "position:absolute;left:" + Math.min(o.putBuy/MAX*100,100) + "%;top:1px;height:" + BH + "px;width:" + Math.min(o.putSell/MAX*100,100) + "%;background:rgba(211,47,47,0.25)"; putDiv.appendChild(d2); }
+      }
+    }
+    if (c2.putBuy  > 0) { var d2 = document.createElement("div"); d2.style.cssText = "position:absolute;left:0;top:1px;height:" + BH + "px;width:" + Math.min(c2.putBuy/MAX*100,100) + "%;background:" + BUY; putDiv.appendChild(d2); }
+    if (c2.putSell > 0) { var d2 = document.createElement("div"); d2.style.cssText = "position:absolute;left:" + Math.min(c2.putBuy/MAX*100,100) + "%;top:1px;height:" + BH + "px;width:" + Math.min(c2.putSell/MAX*100,100) + "%;background:" + SELL; putDiv.appendChild(d2); }
+    row.appendChild(putDiv);
+
+    rowWrap.appendChild(row);
+    wrap.appendChild(rowWrap);
   }
-  var lgnd="";
-  for(var i=0;i<snaps.length;i++){
-    lgnd+="<span style='margin-right:6px'><span style='display:inline-block;width:11px;height:9px;background:"+snaps[i].color+";border:1px solid #ccc;vertical-align:middle'></span>"
-      +" <span style='font-size:8px'>"+snaps[i].label+"</span></span>";
+
+  // 凡例
+  var lgnd = document.createElement("div");
+  lgnd.style.cssText = "margin-top:5px;padding:4px 6px;background:#f5f5f5;border-radius:4px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:8px";
+  for (var i = 0; i < snaps.length; i++) {
+    lgnd.innerHTML += "<span><span style='display:inline-block;width:11px;height:9px;background:" + snaps[i].color + ";border:1px solid #ccc;vertical-align:middle'></span> " + snaps[i].label + "</span>";
   }
-  return "<div class='ci' onmouseleave='hideTip()'>"
-    +"<div style='display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:3px'>"
-    +"<div><div style='font-weight:700;font-size:12px'>Goldman_Sachs_Japan_CoLtd</div>"
-    +"<div style='font-size:11px;color:#555'>建玉残高</div></div>"+pie+"</div>"
-    +"<div style='display:grid;grid-template-columns:1fr 68px 1fr;margin-bottom:2px'>"
-    +"<div style='display:flex;justify-content:space-between;font-size:7px;color:#888'><span>200</span><span>150</span><span>100</span><span>50</span><span>0</span></div><div></div>"
-    +"<div style='display:flex;justify-content:space-between;font-size:7px;color:#888'><span>0</span><span>50</span><span>100</span><span>150</span><span>200</span></div></div>"
-    +"<div style='display:grid;grid-template-columns:1fr 68px 1fr;border-bottom:1px solid #ccc'>"
-    +"<div style='text-align:center;background:#f5f5f5;font-size:11px;font-weight:700;padding:3px 0'>CALL</div>"
-    +"<div style='background:#f5f5f5'></div>"
-    +"<div style='text-align:center;background:#f5f5f5;font-size:11px;font-weight:700;padding:3px 0'>PUT</div></div>"
-    +rows
-    +"<div style='margin-top:5px;padding:4px 6px;background:#f5f5f5;border-radius:4px;display:flex;gap:6px;flex-wrap:wrap;align-items:center'>"
-    +lgnd+"<span style='color:"+BUY+";font-size:8px'>&#9632;Buy</span>"
-    +"<span style='color:"+SELL+";font-size:8px'>&#9632;Sell</span>"
-    +"<span style='color:rgba(25,118,210,0.5);font-size:8px'>&#9632;過去</span></div></div>";
+  lgnd.innerHTML += "<span style='color:" + BUY + "'>&#9632;Buy</span><span style='color:" + SELL + "'>&#9632;Sell</span><span style='color:rgba(25,118,210,0.5)'>&#9632;過去</span>";
+  wrap.appendChild(lgnd);
+  return wrap;
 }
 
-function makeChart2(){
-  var vd=null;
-  if(liveData&&liveData.vol&&liveData.vol.gs&&liveData.vol.gs.length){
-    var opts=[];
-    for(var i=0;i<liveData.vol.gs.length;i++){
-      if(liveData.vol.gs[i].type==="CALL"||liveData.vol.gs[i].type==="PUT")opts.push(liveData.vol.gs[i]);
+// ── グラフ② HTML文字列 ──
+function buildChart2HTML() {
+  var vd = null;
+  if (liveData && liveData.vol && liveData.vol.gs && liveData.vol.gs.length) {
+    var opts = [];
+    for (var i = 0; i < liveData.vol.gs.length; i++) {
+      if (liveData.vol.gs[i].type === "CALL" || liveData.vol.gs[i].type === "PUT") opts.push(liveData.vol.gs[i]);
     }
-    if(opts.length){
-      var m={};
-      var mn=liveData.oi&&liveData.oi.strikes?liveData.oi.strikes.min||51000:51000;
-      var mx=liveData.oi&&liveData.oi.strikes?liveData.oi.strikes.max||56000:56000;
-      for(var s=mn;s<=mx;s+=125)m[s]={strike:s,callVol:0,putVol:0};
-      for(var i=0;i<opts.length;i++){
-        var d=opts[i];
-        if(!m[d.strike])m[d.strike]={strike:d.strike,callVol:0,putVol:0};
-        if(d.type==="CALL")m[d.strike].callVol+=d.volume;
-        else m[d.strike].putVol+=d.volume;
+    if (opts.length) {
+      var m = {};
+      var mn = (liveData.oi && liveData.oi.strikes) ? liveData.oi.strikes.min || 51000 : 51000;
+      var mx = (liveData.oi && liveData.oi.strikes) ? liveData.oi.strikes.max || 56000 : 56000;
+      for (var s = mn; s <= mx; s += 125) m[s] = {strike:s, callVol:0, putVol:0};
+      for (var i = 0; i < opts.length; i++) {
+        var d = opts[i];
+        if (!m[d.strike]) m[d.strike] = {strike:d.strike, callVol:0, putVol:0};
+        if (d.type === "CALL") m[d.strike].callVol += d.volume;
+        else m[d.strike].putVol += d.volume;
       }
-      vd=[];var keys=Object.keys(m);
-      for(var i=0;i<keys.length;i++)vd.push(m[keys[i]]);
+      vd = []; var ks = Object.keys(m);
+      for (var i = 0; i < ks.length; i++) vd.push(m[ks[i]]);
       vd.sort(function(a,b){return a.strike-b.strike;});
     }
   }
-  if(!vd){
-    vd=[];for(var s=51000;s<=56000;s+=125)vd.push({strike:s,callVol:0,putVol:s===51000?25:0});
-  }
-  var pt=0,ct=0;
-  for(var i=0;i<vd.length;i++){pt+=vd[i].putVol;ct+=vd[i].callVol;}
-  var pcr=ct===0?"100.00":(pt/(ct+pt)*100).toFixed(2);
-  var MAX=0;
-  for(var i=0;i<vd.length;i++)MAX=Math.max(MAX,vd[i].callVol,vd[i].putVol);
-  MAX=Math.max(MAX,10);
-  var RH=13;
-  var vdate=liveData&&liveData.vol&&liveData.vol.date?liveData.vol.date:"";
-  var data=vd.slice().reverse();
-  var rows="";
-  for(var i=0;i<data.length;i++){
-    var d=data[i];
-    var hc=d.callVol>0,hp=d.putVol>0,act=hc||hp;
-    rows+="<div style='display:grid;grid-template-columns:1fr 64px 1fr;height:"+RH+"px'>"
-      +"<div style='background:#fce8e8;position:relative;overflow:hidden'>"
-      +(hc?"<div style='position:absolute;right:0;top:1px;height:"+(RH-2)+"px;width:"+Math.min(d.callVol/MAX*100,100)+"%;background:#5b9bd5'></div>":"")
-      +"</div>"
-      +"<div style='height:"+RH+"px;display:flex;align-items:center;justify-content:center;font-size:"+(act?9:7)+"px;font-weight:"+(act?700:400)+";color:"+(act?"#e65100":"#777")+";background:"+(act?"#fff3e0":"#f9f9f9")+"'>"+d.strike.toLocaleString()+"</div>"
-      +"<div style='background:#e8f4fd;position:relative;overflow:hidden'>"
-      +(hp?"<div style='position:absolute;left:0;top:1px;height:"+(RH-2)+"px;width:"+Math.min(d.putVol/MAX*100,100)+"%;background:"+SELL+"'></div>":"")
-      +"</div></div>";
+  if (!vd) { vd = []; for (var s = 51000; s <= 56000; s += 125) vd.push({strike:s, callVol:0, putVol: s===51000?25:0}); }
+  var pt = 0, ct = 0;
+  for (var i = 0; i < vd.length; i++) { pt += vd[i].putVol; ct += vd[i].callVol; }
+  var pcr = ct === 0 ? "100.00" : (pt/(ct+pt)*100).toFixed(2);
+  var MAX = 0;
+  for (var i = 0; i < vd.length; i++) MAX = Math.max(MAX, vd[i].callVol, vd[i].putVol);
+  MAX = Math.max(MAX, 10);
+  var RH = 13, vdate = (liveData && liveData.vol && liveData.vol.date) ? liveData.vol.date : "";
+  var rows = "";
+  for (var i = vd.length-1; i >= 0; i--) {
+    var d = vd[i], hc = d.callVol > 0, hp = d.putVol > 0, act = hc || hp;
+    rows += "<div style='display:grid;grid-template-columns:1fr 64px 1fr;height:" + RH + "px'>"
+      + "<div style='background:#fce8e8;position:relative;overflow:hidden'>"
+      + (hc ? "<div style='position:absolute;right:0;top:1px;height:" + (RH-2) + "px;width:" + Math.min(d.callVol/MAX*100,100) + "%;background:#5b9bd5'></div>" : "")
+      + "</div>"
+      + "<div style='height:" + RH + "px;display:flex;align-items:center;justify-content:center;font-size:" + (act?9:7) + "px;font-weight:" + (act?700:400) + ";color:" + (act?"#e65100":"#777") + ";background:" + (act?"#fff3e0":"#f9f9f9") + "'>" + d.strike.toLocaleString() + "</div>"
+      + "<div style='background:#e8f4fd;position:relative;overflow:hidden'>"
+      + (hp ? "<div style='position:absolute;left:0;top:1px;height:" + (RH-2) + "px;width:" + Math.min(d.putVol/MAX*100,100) + "%;background:" + SELL + "'></div>" : "")
+      + "</div></div>";
   }
   return "<div class='ci'>"
-    +"<div style='font-weight:700;font-size:12px;text-align:center'>Goldman_Sachs_Japan_CoLtd</div>"
-    +"<div style='font-size:11px;text-align:center;color:#555;margin-bottom:1px'>本日の取引量"+(vdate?"（"+vdate+"）":"")+"</div>"
-    +"<div style='background:#ffebee;border:2px solid #e53935;border-radius:6px;padding:5px 8px;text-align:center;font-size:11px;font-weight:700;color:#c62828;margin:4px 0'>売りか買いかは分かりません</div>"
-    +"<div style='display:grid;grid-template-columns:1fr 64px 1fr;margin-bottom:2px'>"
-    +"<div style='display:flex;justify-content:space-between;font-size:7px;color:#888'><span>"+MAX+"</span><span>"+Math.round(MAX*0.5)+"</span><span>0</span></div><div></div>"
-    +"<div style='display:flex;justify-content:space-between;font-size:7px;color:#888'><span>0</span><span>"+Math.round(MAX*0.5)+"</span><span>"+MAX+"</span></div></div>"
-    +"<div style='display:grid;grid-template-columns:1fr 64px 1fr;border-bottom:1px solid #ccc'>"
-    +"<div style='text-align:center;background:#e3f2fd;font-size:11px;font-weight:700;padding:3px 0'>CALL</div>"
-    +"<div style='background:#f5f5f5;display:flex;align-items:center;justify-content:center;font-size:8px;color:#555'>strike</div>"
-    +"<div style='text-align:center;background:#fce4ec;font-size:11px;font-weight:700;padding:3px 0'>PUT(PCR:"+pcr+"%)</div></div>"
-    +rows+"</div>";
+    + "<div style='font-weight:700;font-size:12px;text-align:center'>Goldman_Sachs_Japan_CoLtd</div>"
+    + "<div style='font-size:11px;text-align:center;color:#555;margin-bottom:1px'>本日の取引量" + (vdate?"（"+vdate+"）":"") + "</div>"
+    + "<div style='background:#ffebee;border:2px solid #e53935;border-radius:6px;padding:5px 8px;text-align:center;font-size:11px;font-weight:700;color:#c62828;margin:4px 0'>売りか買いかは分かりません</div>"
+    + "<div style='display:grid;grid-template-columns:1fr 64px 1fr;margin-bottom:2px'>"
+    + "<div style='display:flex;justify-content:space-between;font-size:7px;color:#888'><span>" + MAX + "</span><span>" + Math.round(MAX*0.5) + "</span><span>0</span></div><div></div>"
+    + "<div style='display:flex;justify-content:space-between;font-size:7px;color:#888'><span>0</span><span>" + Math.round(MAX*0.5) + "</span><span>" + MAX + "</span></div></div>"
+    + "<div style='display:grid;grid-template-columns:1fr 64px 1fr;border-bottom:1px solid #ccc'>"
+    + "<div style='text-align:center;background:#e3f2fd;font-size:11px;font-weight:700;padding:3px 0'>CALL</div>"
+    + "<div style='background:#f5f5f5;display:flex;align-items:center;justify-content:center;font-size:8px;color:#555'>strike</div>"
+    + "<div style='text-align:center;background:#fce4ec;font-size:11px;font-weight:700;padding:3px 0'>PUT(PCR:" + pcr + "%)</div></div>"
+    + rows + "</div>";
 }
 
-function makeChart3(){
-  var hist=liveData&&liveData.history?liveData.history:{};
-  var dates=Object.keys(hist).sort();
-  if(!dates.length)return "<div style='background:#1a1a2e;padding:24px;color:#888;text-align:center'>"
-    +"<div style='font-size:13px;color:#fff;margin-bottom:8px'>GSAX 先物取引量 時系列</div>"
-    +"<div style='font-size:11px'>データ蓄積中...</div></div>";
-  var ld=dates[dates.length-1];
-  var SDEF=[
+// ── グラフ③ HTML文字列 ──
+function buildChart3HTML() {
+  var hist = (liveData && liveData.history) ? liveData.history : {};
+  var dates = Object.keys(hist).sort();
+  if (!dates.length) return "<div style='background:#1a1a2e;padding:24px;color:#888;text-align:center'>"
+    + "<div style='font-size:13px;color:#fff;margin-bottom:8px'>GSAX 先物取引量 時系列</div>"
+    + "<div style='font-size:11px'>データ蓄積中...</div></div>";
+  var ld = dates[dates.length-1];
+  var SDEF = [
     {key:"L6",label:"ラージ期近(6月)",color:"#ef5350"},
     {key:"L9",label:"ラージ期先(9月)",color:"#ef5350"},
     {key:"T6",label:"TPX期近(6月)",color:"#43a047"},
@@ -294,297 +325,402 @@ function makeChart3(){
     {key:"M5",label:"ミニ期先(5月)",color:"#ff9800"},
     {key:"M6",label:"ミニ期先先(6月)",color:"#ff9800"}
   ];
-  var sHTML="";
-  for(var si=0;si<SDEF.length;si++){
-    var s=SDEF[si];
-    var vals=[];
-    for(var i=0;i<dates.length;i++)vals.push(hist[dates[i]][s.key]||0);
-    var maxV=0;for(var i=0;i<vals.length;i++)maxV=Math.max(maxV,vals[i]);
-    if(maxV<=1)continue;
-    var last=hist[ld][s.key]||0;
-    var W=300,H=36;
-    var pts="";
-    for(var i=0;i<vals.length;i++){
-      var x=dates.length>1?i/(dates.length-1)*W:W/2;
-      var y=H-(vals[i]/maxV)*(H-4)-2;
-      pts+=(i===0?"":"")+x+","+y+" ";
+  var sHTML = "";
+  for (var si = 0; si < SDEF.length; si++) {
+    var s = SDEF[si];
+    var vals = [], maxV = 0;
+    for (var i = 0; i < dates.length; i++) { var v = hist[dates[i]][s.key]||0; vals.push(v); maxV = Math.max(maxV, v); }
+    if (maxV <= 1) continue;
+    var last = hist[ld][s.key] || 0;
+    var W = 300, H = 36, pts = "";
+    for (var i = 0; i < vals.length; i++) {
+      var x = dates.length > 1 ? i/(dates.length-1)*W : W/2;
+      pts += x + "," + (H - (vals[i]/maxV)*(H-4) - 2) + " ";
     }
-    sHTML+="<div style='margin-bottom:1px'><div style='display:flex;align-items:center'>"
-      +"<div style='width:38px;font-size:7px;color:"+s.color+";text-align:right;padding-right:3px;flex-shrink:0'>"+maxV.toLocaleString()+"-</div>"
-      +"<div style='flex:1;border-bottom:1px solid #2a3a50'>"
-      +"<div style='font-size:7px;color:#556;padding-left:2px'>"+s.label+"</div>"
-      +"<svg width='100%' height='"+H+"' viewBox='0 0 "+W+" "+H+"' preserveAspectRatio='none'>"
-      +"<polyline points='"+pts+"' fill='none' stroke='"+s.color+"' stroke-width='1.5'/></svg>"
-      +"<div style='font-size:7px;color:#556;padding-left:2px'>0-</div></div>"
-      +"<div style='width:44px;text-align:right;font-size:10px;color:"+(last>0?s.color:"#444")+";font-weight:700;padding-left:3px;flex-shrink:0'>"+(last>0?last.toLocaleString():"-")+"</div>"
-      +"</div></div>";
+    sHTML += "<div style='margin-bottom:1px'><div style='display:flex;align-items:center'>"
+      + "<div style='width:38px;font-size:7px;color:" + s.color + ";text-align:right;padding-right:3px;flex-shrink:0'>" + maxV.toLocaleString() + "-</div>"
+      + "<div style='flex:1;border-bottom:1px solid #2a3a50'>"
+      + "<div style='font-size:7px;color:#556;padding-left:2px'>" + s.label + "</div>"
+      + "<svg width='100%' height='" + H + "' viewBox='0 0 " + W + " " + H + "' preserveAspectRatio='none'>"
+      + "<polyline points='" + pts + "' fill='none' stroke='" + s.color + "' stroke-width='1.5'/></svg>"
+      + "<div style='font-size:7px;color:#556;padding-left:2px'>0-</div></div>"
+      + "<div style='width:44px;text-align:right;font-size:10px;color:" + (last>0?s.color:"#444") + ";font-weight:700;padding-left:3px;flex-shrink:0'>" + (last>0?last.toLocaleString():"-") + "</div>"
+      + "</div></div>";
   }
-  var xL="";var step=Math.max(1,Math.floor(dates.length/6));
-  for(var i=0;i<dates.length;i+=step)xL+=dates[i].slice(5).replace("-","/")+"  ";
+  var xL = "", step = Math.max(1, Math.floor(dates.length/6));
+  for (var i = 0; i < dates.length; i += step) xL += dates[i].slice(5).replace("-","/") + "  ";
   return "<div style='background:#1a1a2e;padding:10px 6px;color:#fff'>"
-    +"<div style='font-weight:700;font-size:13px;margin-bottom:2px'>GSAX 先物取引量 "+ld+"現在</div>"
-    +"<div style='font-size:8px;color:#445;margin-bottom:4px'>JPX日次データより自動集計（"+dates.length+"営業日分）</div>"
-    +sHTML+"<div style='font-size:7px;color:#888;margin-top:4px;padding-left:38px'>"+xL+"</div></div>";
+    + "<div style='font-weight:700;font-size:13px;margin-bottom:2px'>GSAX 先物取引量 " + ld + "現在</div>"
+    + "<div style='font-size:8px;color:#445;margin-bottom:4px'>JPX日次データより自動集計（" + dates.length + "営業日分）</div>"
+    + sHTML + "<div style='font-size:7px;color:#888;margin-top:4px;padding-left:38px'>" + xL + "</div></div>";
 }
 
-function makeChart4(){
-  var fh=liveData&&liveData.fut_oi_history?liveData.fut_oi_history:{
+// ── グラフ④ HTML文字列 ──
+function buildChart4HTML() {
+  var fh = (liveData && liveData.fut_oi_history) ? liveData.fut_oi_history : {
     "2026-03-27":{NK225_2606:-13190,NK225_2609:27,MINI_2604:10000,MINI_2605:0,MINI_2606:0,TOPIX_2606:-30704,TOPIX_2609:-600},
     "2026-04-03":{NK225_2606:-6893,NK225_2609:27,MINI_2604:9000,MINI_2605:0,MINI_2606:0,TOPIX_2606:11258,TOPIX_2609:-600}
   };
-  var dates=Object.keys(fh).sort();
-  if(!dates.length)return "<div style='padding:24px;color:#888;text-align:center'>データなし</div>";
-  var SR=[
-    {id:"near",label:"期近(2606)",color:"#1976d2",
-     gX:function(d){return d.NK225_2606||0;},gY:function(d){return d.TOPIX_2606||0;}},
-    {id:"far",label:"期先(2609)",color:"#d32f2f",
-     gX:function(d){return d.NK225_2609||0;},gY:function(d){return d.TOPIX_2609||0;}},
-    {id:"mini",label:"mini換算",color:"#388e3c",
-     gX:function(d){return((d.MINI_2604||0)+(d.MINI_2605||0)+(d.MINI_2606||0))/10;},
-     gY:function(d){return 0;}}
+  var dates = Object.keys(fh).sort();
+  if (!dates.length) return "<div style='padding:24px;color:#888;text-align:center'>データなし</div>";
+  var SR = [
+    {label:"期近(2606)",color:"#1976d2",gX:function(d){return d.NK225_2606||0;},gY:function(d){return d.TOPIX_2606||0;}},
+    {label:"期先(2609)",color:"#d32f2f",gX:function(d){return d.NK225_2609||0;},gY:function(d){return d.TOPIX_2609||0;}},
+    {label:"mini換算",color:"#388e3c",gX:function(d){return((d.MINI_2604||0)+(d.MINI_2605||0)+(d.MINI_2606||0))/10;},gY:function(){return 0;}}
   ];
-  var aX=[0],aY=[0];
-  for(var i=0;i<dates.length;i++){
-    var d=fh[dates[i]];
-    for(var j=0;j<SR.length;j++){aX.push(SR[j].gX(d));aY.push(SR[j].gY(d));}
-  }
-  var xMn=aX[0],xMx=aX[0];
-  for(var i=1;i<aX.length;i++){xMn=Math.min(xMn,aX[i]);xMx=Math.max(xMx,aX[i]);}
-  var yMn=aY[0],yMx=aY[0];
-  for(var i=1;i<aY.length;i++){yMn=Math.min(yMn,aY[i]);yMx=Math.max(yMx,aY[i]);}
-  var xP=Math.max((xMx-xMn)*0.2,3000),yP=Math.max((yMx-yMn)*0.2,3000);
-  var X0=xMn-xP,X1=xMx+xP,Y0=yMn-yP,Y1=yMx+yP;
+  var aX=[0], aY=[0];
+  for (var i=0; i<dates.length; i++) { var dd=fh[dates[i]]; for (var j=0; j<SR.length; j++) { aX.push(SR[j].gX(dd)); aY.push(SR[j].gY(dd)); } }
+  var xMn=aX[0],xMx=aX[0],yMn=aY[0],yMx=aY[0];
+  for (var i=1;i<aX.length;i++){xMn=Math.min(xMn,aX[i]);xMx=Math.max(xMx,aX[i]);}
+  for (var i=1;i<aY.length;i++){yMn=Math.min(yMn,aY[i]);yMx=Math.max(yMx,aY[i]);}
+  var xP=Math.max((xMx-xMn)*0.2,3000), yP=Math.max((yMx-yMn)*0.2,3000);
+  var X0=xMn-xP, X1=xMx+xP, Y0=yMn-yP, Y1=yMx+yP;
   var W=300,H=240,PL=52,PR=12,PT=18,PB=36,CW=W-PL-PR,CH=H-PT-PB;
   function px(x){return PL+(x-X0)/(X1-X0)*CW;}
   function py(y){return PT+CH-(y-Y0)/(Y1-Y0)*CH;}
-  var zx=Math.round(px(0)),zy=Math.round(py(0));
-  var stps=[500,1000,2000,5000,10000,20000,50000];
-  var xSt=stps[0],ySt=stps[0];
-  for(var i=0;i<stps.length;i++){if((X1-X0)/stps[i]<8){xSt=stps[i];break;}}
-  for(var i=0;i<stps.length;i++){if((Y1-Y0)/stps[i]<8){ySt=stps[i];break;}}
+  var zx=Math.round(px(0)), zy=Math.round(py(0));
+  var stps=[500,1000,2000,5000,10000,20000,50000], xSt=stps[0], ySt=stps[0];
+  for (var i=0;i<stps.length;i++){if((X1-X0)/stps[i]<8){xSt=stps[i];break;}}
+  for (var i=0;i<stps.length;i++){if((Y1-Y0)/stps[i]<8){ySt=stps[i];break;}}
   var grid="";
-  for(var v=Math.ceil(X0/xSt)*xSt;v<=X1;v+=xSt){
+  for (var v=Math.ceil(X0/xSt)*xSt; v<=X1; v+=xSt) {
     var gx=Math.round(px(v));
-    grid+="<line x1='"+gx+"' y1='"+PT+"' x2='"+gx+"' y2='"+(PT+CH)+"' stroke='#eee' stroke-width='1'/>"
-      +"<text x='"+gx+"' y='"+(PT+CH+11)+"' text-anchor='middle' font-size='7' fill='#999'>"+(v/1000).toFixed(0)+"k</text>";
+    grid += "<line x1='" + gx + "' y1='" + PT + "' x2='" + gx + "' y2='" + (PT+CH) + "' stroke='#eee' stroke-width='1'/>"
+      + "<text x='" + gx + "' y='" + (PT+CH+11) + "' text-anchor='middle' font-size='7' fill='#999'>" + (v/1000).toFixed(0) + "k</text>";
   }
-  for(var v=Math.ceil(Y0/ySt)*ySt;v<=Y1;v+=ySt){
+  for (var v=Math.ceil(Y0/ySt)*ySt; v<=Y1; v+=ySt) {
     var gy=Math.round(py(v));
-    grid+="<line x1='"+PL+"' y1='"+gy+"' x2='"+(PL+CW)+"' y2='"+gy+"' stroke='#eee' stroke-width='1'/>"
-      +"<text x='"+(PL-4)+"' y='"+(gy+3)+"' text-anchor='end' font-size='7' fill='#999'>"+(v/1000).toFixed(0)+"k</text>";
+    grid += "<line x1='" + PL + "' y1='" + gy + "' x2='" + (PL+CW) + "' y2='" + gy + "' stroke='#eee' stroke-width='1'/>"
+      + "<text x='" + (PL-4) + "' y='" + (gy+3) + "' text-anchor='end' font-size='7' fill='#999'>" + (v/1000).toFixed(0) + "k</text>";
   }
   var svg="";
-  for(var si=0;si<SR.length;si++){
-    var s=SR[si];
-    var pts=[];
-    for(var i=0;i<dates.length;i++){
-      pts.push({x:Math.round(px(s.gX(fh[dates[i]]))*10)/10,y:Math.round(py(s.gY(fh[dates[i]]))*10)/10});
+  for (var si=0; si<SR.length; si++) {
+    var s=SR[si], pts=[];
+    for (var i=0; i<dates.length; i++) pts.push({x:Math.round(px(s.gX(fh[dates[i]]))*10)/10, y:Math.round(py(s.gY(fh[dates[i]]))*10)/10});
+    if (pts.length > 1) {
+      var pd=""; for (var i=0;i<pts.length;i++) pd += (i===0?"M":"L") + pts[i].x + "," + pts[i].y;
+      svg += "<path d='" + pd + "' fill='none' stroke='" + s.color + "' stroke-width='2' opacity='0.7'/>";
     }
-    if(pts.length>1){
-      var pd="";for(var i=0;i<pts.length;i++)pd+=(i===0?"M":"L")+pts[i].x+","+pts[i].y;
-      svg+="<path d='"+pd+"' fill='none' stroke='"+s.color+"' stroke-width='2' opacity='0.7'/>";
-    }
-    for(var i=0;i<pts.length-1;i++){
-      svg+="<circle cx='"+pts[i].x+"' cy='"+pts[i].y+"' r='4' fill='white' stroke='"+s.color+"' stroke-width='1.5'/>";
-    }
+    for (var i=0; i<pts.length-1; i++) svg += "<circle cx='" + pts[i].x + "' cy='" + pts[i].y + "' r='4' fill='white' stroke='" + s.color + "' stroke-width='1.5'/>";
     var lp=pts[pts.length-1];
-    svg+="<circle cx='"+lp.x+"' cy='"+lp.y+"' r='6' fill='"+s.color+"' fill-opacity='0.9' stroke='white' stroke-width='1'/>"
-      +"<text x='"+(lp.x+8)+"' y='"+(lp.y+4)+"' font-size='8' fill='"+s.color+"' font-weight='700'>"+s.label+"</text>";
+    svg += "<circle cx='" + lp.x + "' cy='" + lp.y + "' r='6' fill='" + s.color + "' fill-opacity='0.9' stroke='white' stroke-width='1'/>"
+      + "<text x='" + (lp.x+8) + "' y='" + (lp.y+4) + "' font-size='8' fill='" + s.color + "' font-weight='700'>" + s.label + "</text>";
   }
-  var lgnd="";
-  for(var si=0;si<SR.length;si++){
-    lgnd+="<span style='margin-right:10px;font-size:9px;color:"+SR[si].color+"'>&#9679; "+SR[si].label+"</span>";
-  }
-  var dl=dates.length>1?dates[0].slice(5)+" 〜 "+dates[dates.length-1].slice(5):dates[0].slice(5);
+  var lgnd=""; for (var si=0;si<SR.length;si++) lgnd += "<span style='margin-right:10px;font-size:9px;color:" + SR[si].color + "'>&#9679; " + SR[si].label + "</span>";
+  var dl = dates.length>1 ? dates[0].slice(5)+" 〜 "+dates[dates.length-1].slice(5) : dates[0].slice(5);
   return "<div class='ci'>"
-    +"<div style='font-weight:700;font-size:11px;text-align:center;margin-bottom:2px'>Goldman Sachs &#8212; 先物建玉推移</div>"
-    +"<div style='font-size:9px;text-align:center;color:#888;margin-bottom:4px'>"+dl+"（"+dates.length+"週分）</div>"
-    +"<svg width='100%' viewBox='0 0 "+W+" "+H+"' style='overflow:visible'>"
-    +grid
-    +"<line x1='"+PL+"' y1='"+zy+"' x2='"+(PL+CW)+"' y2='"+zy+"' stroke='#333' stroke-width='1.5'/>"
-    +"<line x1='"+zx+"' y1='"+PT+"' x2='"+zx+"' y2='"+(PT+CH)+"' stroke='#333' stroke-width='1.5'/>"
-    +"<text x='"+(PL+CW/2)+"' y='"+(H-2)+"' text-anchor='middle' font-size='8' fill='#555'>Sell &lt;&#8212; NK225 &#8212;&gt; Buy</text>"
-    +"<text x='10' y='"+(PT+CH/2)+"' text-anchor='middle' font-size='8' fill='#555' transform='rotate(-90,10,"+(PT+CH/2)+")'>Sell &lt;&#8212; TOPIX &#8212;&gt; Buy</text>"
-    +svg+"</svg>"
-    +"<div style='padding:4px 0;font-size:9px'>"+lgnd+"</div>"
-    +"<div style='font-size:8px;color:#aaa;text-align:center'>&#9679; 最新 &#9675; 過去 mini=large&#247;10</div></div>";
+    + "<div style='font-weight:700;font-size:11px;text-align:center;margin-bottom:2px'>Goldman Sachs &#8212; 先物建玉推移</div>"
+    + "<div style='font-size:9px;text-align:center;color:#888;margin-bottom:4px'>" + dl + "（" + dates.length + "週分）</div>"
+    + "<svg width='100%' viewBox='0 0 " + W + " " + H + "' style='overflow:visible'>"
+    + grid
+    + "<line x1='" + PL + "' y1='" + zy + "' x2='" + (PL+CW) + "' y2='" + zy + "' stroke='#333' stroke-width='1.5'/>"
+    + "<line x1='" + zx + "' y1='" + PT + "' x2='" + zx + "' y2='" + (PT+CH) + "' stroke='#333' stroke-width='1.5'/>"
+    + "<text x='" + (PL+CW/2) + "' y='" + (H-2) + "' text-anchor='middle' font-size='8' fill='#555'>Sell &lt;&#8212; NK225 &#8212;&gt; Buy</text>"
+    + "<text x='10' y='" + (PT+CH/2) + "' text-anchor='middle' font-size='8' fill='#555' transform='rotate(-90,10," + (PT+CH/2) + ")'>Sell &lt;&#8212; TOPIX &#8212;&gt; Buy</text>"
+    + svg + "</svg>"
+    + "<div style='padding:4px 0;font-size:9px'>" + lgnd + "</div>"
+    + "<div style='font-size:8px;color:#aaa;text-align:center'>&#9679; 最新 &#9675; 過去 mini=large&#247;10</div></div>";
 }
 
-function makeChart5(){
-  var recs=loadRecs();
-  var oiDate=liveData&&liveData.oi?liveData.oi.date:"";
-  var fh=liveData&&liveData.fut_oi_history?liveData.fut_oi_history:{};
-  var fDates=Object.keys(fh).sort();
-  var futDate=fDates.length?fDates[fDates.length-1]:"";
-  var sqDate="2026-04-10";
-  var DI={"up":"&#9650;上昇","down":"&#9660;下落","neutral":"&#8212;中立"};
-  var out="<div style='background:#fff;padding:12px'>";
-  out+="<div style='font-weight:700;font-size:13px;margin-bottom:10px;color:#1a237e'>&#128221; 予測記録</div>";
-  out+="<div style='background:#f5f5f5;border-radius:8px;padding:10px;margin-bottom:14px'>";
-  out+="<div style='font-weight:700;font-size:11px;color:#555;margin-bottom:6px'>新規予測を作成</div>";
-  out+="<div style='font-size:10px;color:#888;margin-bottom:8px'>参照: OI "+oiDate+" / 先物 "+futDate+"</div>";
-  out+="<div style='font-size:11px;font-weight:600;margin-bottom:4px'>日経225</div>";
-  out+="<div style='display:flex;gap:6px;margin-bottom:8px'>";
-  out+="<button id='nk-up' onclick='selDir(0,0)' style='flex:1;padding:6px;border-radius:6px;font-size:11px;border:2px solid #1976d2;background:#e3f2fd;color:#1976d2;opacity:0.4'>&#9650; 上昇</button>";
-  out+="<button id='nk-neu' onclick='selDir(0,1)' style='flex:1;padding:6px;border-radius:6px;font-size:11px;border:2px solid #ccc;background:#f5f5f5;color:#555;opacity:0.4'>&#8212; 中立</button>";
-  out+="<button id='nk-dn' onclick='selDir(0,2)' style='flex:1;padding:6px;border-radius:6px;font-size:11px;border:2px solid #d32f2f;background:#ffebee;color:#d32f2f'>&#9660; 下落</button>";
-  out+="</div>";
-  out+="<div style='font-size:11px;font-weight:600;margin-bottom:4px'>TOPIX</div>";
-  out+="<div style='display:flex;gap:6px;margin-bottom:8px'>";
-  out+="<button id='tx-up' onclick='selDir(1,0)' style='flex:1;padding:6px;border-radius:6px;font-size:11px;border:2px solid #1976d2;background:#e3f2fd;color:#1976d2'>&#9650; 上昇</button>";
-  out+="<button id='tx-neu' onclick='selDir(1,1)' style='flex:1;padding:6px;border-radius:6px;font-size:11px;border:2px solid #ccc;background:#f5f5f5;color:#555;opacity:0.4'>&#8212; 中立</button>";
-  out+="<button id='tx-dn' onclick='selDir(1,2)' style='flex:1;padding:6px;border-radius:6px;font-size:11px;border:2px solid #d32f2f;background:#ffebee;color:#d32f2f;opacity:0.4'>&#9660; 下落</button>";
-  out+="</div>";
-  out+="<div style='font-size:11px;font-weight:600;margin-bottom:4px'>根拠・メモ</div>";
-  out+="<textarea id='pmemo' rows='3' style='width:100%;border:1px solid #ddd;border-radius:6px;padding:6px;font-size:11px;resize:none'>53,000円コール売・プット買→日経SQまで下落予測。TOPIX6月限買転換→上昇予測。</textarea>";
-  out+="<div style='font-size:11px;font-weight:600;margin:6px 0 4px'>SQ日</div>";
-  out+="<input id='psq' type='date' value='"+sqDate+"' style='border:1px solid #ddd;border-radius:6px;padding:6px;font-size:11px;width:100%'>";
-  out+="<button onclick='savePred()' style='width:100%;margin-top:10px;padding:8px;background:#1976d2;color:#fff;border-radius:6px;font-size:12px;font-weight:700'>予測を保存</button>";
-  out+="</div>";
-  if(!recs.length){
-    out+="<div style='color:#aaa;font-size:11px;text-align:center;padding:16px'>まだ記録がありません</div>";
+// ── グラフ⑤ DOM生成 ──
+function buildChart5() {
+  var recs = loadRecs();
+  var oiDate = (liveData && liveData.oi) ? liveData.oi.date : "";
+  var fh = (liveData && liveData.fut_oi_history) ? liveData.fut_oi_history : {};
+  var fDates = Object.keys(fh).sort();
+  var futDate = fDates.length ? fDates[fDates.length-1] : "";
+  var DI = {up:"&#9650;上昇", down:"&#9660;下落", neutral:"&#8212;中立"};
+
+  var wrap = document.createElement("div");
+  wrap.style.cssText = "background:#fff;padding:12px";
+
+  // タイトル
+  var title = document.createElement("div");
+  title.style.cssText = "font-weight:700;font-size:13px;margin-bottom:10px;color:#1a237e";
+  title.innerHTML = "&#128221; 予測記録";
+  wrap.appendChild(title);
+
+  // フォーム
+  var form = document.createElement("div");
+  form.style.cssText = "background:#f5f5f5;border-radius:8px;padding:10px;margin-bottom:14px";
+  form.innerHTML = "<div style='font-weight:700;font-size:11px;color:#555;margin-bottom:6px'>新規予測を作成</div>"
+    + "<div style='font-size:10px;color:#888;margin-bottom:8px'>参照: OI " + oiDate + " / 先物 " + futDate + "</div>";
+
+  function makeDirBtns(target, state) {
+    var row = document.createElement("div");
+    row.style.cssText = "display:flex;gap:6px;margin-bottom:8px";
+    var dirs = ["up","neutral","down"];
+    var labels = ["&#9650; 上昇","&#8212; 中立","&#9660; 下落"];
+    var colors = ["#1976d2","#555","#d32f2f"];
+    var bgs = ["#e3f2fd","#f5f5f5","#ffebee"];
+    var borders = ["#1976d2","#ccc","#d32f2f"];
+    var btns = [];
+    for (var i = 0; i < 3; i++) {
+      (function(dir, idx) {
+        var btn = document.createElement("button");
+        btn.style.cssText = "flex:1;padding:6px;border-radius:6px;font-size:11px;border:2px solid " + borders[idx] + ";background:" + bgs[idx] + ";color:" + colors[idx] + ";opacity:" + (state === dir ? "1" : "0.4");
+        btn.innerHTML = labels[idx];
+        btn.addEventListener("click", function() {
+          if (target === "nk") predNK = dir; else predTX = dir;
+          for (var j = 0; j < btns.length; j++) btns[j].style.opacity = j === idx ? "1" : "0.4";
+        });
+        btns.push(btn);
+        row.appendChild(btn);
+      })(dirs[i], i);
+    }
+    return row;
+  }
+
+  var nkLabel = document.createElement("div");
+  nkLabel.style.cssText = "font-size:11px;font-weight:600;margin-bottom:4px";
+  nkLabel.textContent = "日経225";
+  form.appendChild(nkLabel);
+  form.appendChild(makeDirBtns("nk", predNK));
+
+  var txLabel = document.createElement("div");
+  txLabel.style.cssText = "font-size:11px;font-weight:600;margin-bottom:4px";
+  txLabel.textContent = "TOPIX";
+  form.appendChild(txLabel);
+  form.appendChild(makeDirBtns("tx", predTX));
+
+  var memoLabel = document.createElement("div");
+  memoLabel.style.cssText = "font-size:11px;font-weight:600;margin-bottom:4px";
+  memoLabel.textContent = "根拠・メモ";
+  form.appendChild(memoLabel);
+
+  var memo = document.createElement("textarea");
+  memo.id = "pmemo5";
+  memo.rows = 3;
+  memo.style.cssText = "width:100%;border:1px solid #ddd;border-radius:6px;padding:6px;font-size:11px;resize:none";
+  memo.value = "53,000円コール売・プット買→日経SQまで下落予測。TOPIX6月限買転換→上昇予測。";
+  form.appendChild(memo);
+
+  var sqLabel = document.createElement("div");
+  sqLabel.style.cssText = "font-size:11px;font-weight:600;margin:6px 0 4px";
+  sqLabel.textContent = "SQ日";
+  form.appendChild(sqLabel);
+
+  var sqInput = document.createElement("input");
+  sqInput.type = "date"; sqInput.id = "psq5"; sqInput.value = "2026-04-10";
+  sqInput.style.cssText = "border:1px solid #ddd;border-radius:6px;padding:6px;font-size:11px;width:100%";
+  form.appendChild(sqInput);
+
+  var saveBtn = document.createElement("button");
+  saveBtn.style.cssText = "width:100%;margin-top:10px;padding:8px;background:#1976d2;color:#fff;border-radius:6px;font-size:12px;font-weight:700";
+  saveBtn.textContent = "予測を保存";
+  saveBtn.addEventListener("click", function() {
+    var m = document.getElementById("pmemo5");
+    var sq = document.getElementById("psq5");
+    if (!m || !sq) return;
+    var rec = {created:new Date().toISOString().slice(0,10), oi_date:oiDate, fut_date:futDate,
+      nk225_dir:predNK, topix_dir:predTX, memo:m.value, sq_date:sq.value, verified:false};
+    var rs = loadRecs(); rs.push(rec); saveRecs(rs);
+    setTab("c5");
+  });
+  form.appendChild(saveBtn);
+  wrap.appendChild(form);
+
+  // 記録一覧
+  if (!recs.length) {
+    var empty = document.createElement("div");
+    empty.style.cssText = "color:#aaa;font-size:11px;text-align:center;padding:16px";
+    empty.textContent = "まだ記録がありません";
+    wrap.appendChild(empty);
   } else {
-    for(var ri=recs.length-1;ri>=0;ri--){
-      var r=recs[ri];
-      var verified=r.verified;
-      var bc=verified?(r.nk225_correct&&r.topix_correct?"#4caf50":r.nk225_correct||r.topix_correct?"#ff9800":"#f44336"):"#e0e0e0";
-      var bg2=verified?(r.nk225_correct&&r.topix_correct?"#e8f5e9":r.nk225_correct||r.topix_correct?"#fff8e1":"#ffebee"):"#fafafa";
-      out+="<div style='border:2px solid "+bc+";border-radius:8px;padding:10px;margin-bottom:10px;background:"+bg2+"'>";
-      out+="<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:6px'>";
-      out+="<div style='font-size:10px;color:#888'>"+r.created+"</div>";
-      if(verified){
-        out+="<span style='font-size:10px;font-weight:700;color:"+bc+"'>"+(r.nk225_correct&&r.topix_correct?"&#10003;完全的中":r.nk225_correct||r.topix_correct?"&#9889;部分的中":"&#10007;外れ")+"</span>";
-      } else {
-        out+="<span style='font-size:10px;color:#aaa'>未検証</span>";
-      }
-      out+="</div>";
-      out+="<div style='font-size:10px;color:#888;margin-bottom:4px'>OI:"+r.oi_date+" / 先物:"+r.fut_date+" / SQ:"+r.sq_date+"</div>";
-      out+="<div style='display:flex;gap:10px;margin-bottom:6px;font-size:11px'>";
-      out+="<span style='color:#1565c0'><b>日経:</b> "+DI[r.nk225_dir]+"</span>";
-      out+="<span style='color:#b71c1c'><b>TOPIX:</b> "+DI[r.topix_dir]+"</span>";
-      out+="</div>";
-      out+="<div style='font-size:10px;color:#555;margin-bottom:8px'>"+r.memo+"</div>";
-      if(!verified){
-        out+="<div style='font-size:10px;font-weight:600;color:#555;margin-bottom:4px'>SQ結果を入力して検証</div>";
-        out+="<div style='display:flex;gap:8px;margin-bottom:6px'>";
-        out+="<div style='flex:1;font-size:10px'>日経: <select id='vr-nk-"+ri+"' style='font-size:10px;border:1px solid #ddd;border-radius:4px'><option value='up'>上昇</option><option value='down'>下落</option><option value='neutral'>中立</option></select></div>";
-        out+="<div style='flex:1;font-size:10px'>TOPIX: <select id='vr-tx-"+ri+"' style='font-size:10px;border:1px solid #ddd;border-radius:4px'><option value='up'>上昇</option><option value='down'>下落</option><option value='neutral'>中立</option></select></div>";
-        out+="</div>";
-        out+="<button onclick='verRec("+ri+")' style='width:100%;padding:5px;background:#388e3c;color:#fff;border-radius:6px;font-size:11px;font-weight:600'>検証を確定</button>";
-      } else {
-        out+="<div style='font-size:10px;color:#555'>実績: 日経 "+DI[r.nk225_actual]+" / TOPIX "+DI[r.topix_actual]+"</div>";
-      }
-      out+="<button onclick='delRec("+ri+")' style='margin-top:4px;font-size:9px;color:#bbb;background:none;border:none;text-decoration:underline'>削除</button>";
-      out+="</div>";
+    for (var ri = recs.length-1; ri >= 0; ri--) {
+      (function(r, idx) {
+        var verified = r.verified;
+        var bc = verified ? (r.nk225_correct&&r.topix_correct?"#4caf50":r.nk225_correct||r.topix_correct?"#ff9800":"#f44336") : "#e0e0e0";
+        var bg2 = verified ? (r.nk225_correct&&r.topix_correct?"#e8f5e9":r.nk225_correct||r.topix_correct?"#fff8e1":"#ffebee") : "#fafafa";
+
+        var card = document.createElement("div");
+        card.style.cssText = "border:2px solid " + bc + ";border-radius:8px;padding:10px;margin-bottom:10px;background:" + bg2;
+
+        var topRow = document.createElement("div");
+        topRow.style.cssText = "display:flex;justify-content:space-between;align-items:center;margin-bottom:6px";
+        var dateSpan = document.createElement("span");
+        dateSpan.style.cssText = "font-size:10px;color:#888";
+        dateSpan.textContent = r.created;
+        topRow.appendChild(dateSpan);
+        var statusSpan = document.createElement("span");
+        statusSpan.style.cssText = "font-size:10px;font-weight:700;color:" + bc;
+        if (verified) statusSpan.innerHTML = r.nk225_correct&&r.topix_correct?"&#10003;完全的中":r.nk225_correct||r.topix_correct?"&#9889;部分的中":"&#10007;外れ";
+        else statusSpan.style.color="#aaa", statusSpan.textContent="未検証";
+        topRow.appendChild(statusSpan);
+        card.appendChild(topRow);
+
+        var meta = document.createElement("div");
+        meta.style.cssText = "font-size:10px;color:#888;margin-bottom:4px";
+        meta.textContent = "OI:" + r.oi_date + " / 先物:" + r.fut_date + " / SQ:" + r.sq_date;
+        card.appendChild(meta);
+
+        var dirs = document.createElement("div");
+        dirs.style.cssText = "display:flex;gap:10px;margin-bottom:6px;font-size:11px";
+        dirs.innerHTML = "<span style='color:#1565c0'><b>日経:</b> " + DI[r.nk225_dir] + "</span>"
+          + "<span style='color:#b71c1c'><b>TOPIX:</b> " + DI[r.topix_dir] + "</span>";
+        card.appendChild(dirs);
+
+        var memoDiv = document.createElement("div");
+        memoDiv.style.cssText = "font-size:10px;color:#555;margin-bottom:8px";
+        memoDiv.textContent = r.memo;
+        card.appendChild(memoDiv);
+
+        if (!verified) {
+          var verLabel = document.createElement("div");
+          verLabel.style.cssText = "font-size:10px;font-weight:600;color:#555;margin-bottom:4px";
+          verLabel.textContent = "SQ結果を入力して検証";
+          card.appendChild(verLabel);
+
+          var selRow = document.createElement("div");
+          selRow.style.cssText = "display:flex;gap:8px;margin-bottom:6px";
+
+          var nkSel = document.createElement("select");
+          nkSel.style.cssText = "font-size:10px;border:1px solid #ddd;border-radius:4px;flex:1";
+          nkSel.innerHTML = "<option value='up'>日経:上昇</option><option value='down'>日経:下落</option><option value='neutral'>日経:中立</option>";
+          selRow.appendChild(nkSel);
+
+          var txSel = document.createElement("select");
+          txSel.style.cssText = "font-size:10px;border:1px solid #ddd;border-radius:4px;flex:1";
+          txSel.innerHTML = "<option value='up'>TOPIX:上昇</option><option value='down'>TOPIX:下落</option><option value='neutral'>TOPIX:中立</option>";
+          selRow.appendChild(txSel);
+          card.appendChild(selRow);
+
+          var verBtn = document.createElement("button");
+          verBtn.style.cssText = "width:100%;padding:5px;background:#388e3c;color:#fff;border-radius:6px;font-size:11px;font-weight:600";
+          verBtn.textContent = "検証を確定";
+          verBtn.addEventListener("click", function() {
+            var rs = loadRecs();
+            if (!rs[idx]) return;
+            rs[idx].nk225_actual = nkSel.value;
+            rs[idx].topix_actual = txSel.value;
+            rs[idx].nk225_correct = rs[idx].nk225_dir === nkSel.value;
+            rs[idx].topix_correct = rs[idx].topix_dir === txSel.value;
+            rs[idx].verified = true;
+            rs[idx].verified_date = new Date().toISOString().slice(0,10);
+            saveRecs(rs); setTab("c5");
+          });
+          card.appendChild(verBtn);
+        } else {
+          var actual = document.createElement("div");
+          actual.style.cssText = "font-size:10px;color:#555";
+          actual.innerHTML = "実績: 日経 " + DI[r.nk225_actual] + " / TOPIX " + DI[r.topix_actual];
+          card.appendChild(actual);
+        }
+
+        var delBtn = document.createElement("button");
+        delBtn.style.cssText = "margin-top:4px;font-size:9px;color:#bbb;background:none;border:none;text-decoration:underline";
+        delBtn.textContent = "削除";
+        delBtn.addEventListener("click", function() {
+          var rs = loadRecs(); rs.splice(idx,1); saveRecs(rs); setTab("c5");
+        });
+        card.appendChild(delBtn);
+        wrap.appendChild(card);
+      })(recs[ri], ri);
     }
   }
-  out+="</div>";
-  return out;
+  return wrap;
 }
 
-function selDir(tIdx,dIdx){
-  var targets=["nk225","topix"];
-  var dirNames=["up","neutral","down"];
-  var target=targets[tIdx];
-  var dir=dirNames[dIdx];
-  predState[target]=dir;
-  var p=tIdx===0?"nk":"tx";
-  var ids=["up","neu","dn"];
-  for(var i=0;i<ids.length;i++){
-    var el=document.getElementById(p+"-"+ids[i]);
-    if(el)el.style.opacity=i===dIdx?"1":"0.4";
+// ── タブ・レンダー ──
+function setTab(id) { currentTab = id; render(); }
+
+function render() {
+  var loading = arguments[0] === true;
+  var upd = arguments[1] || "";
+  var hasData = !!liveData;
+
+  var root = document.getElementById("root");
+  root.innerHTML = "";
+
+  // ヘッダー
+  var hdrDiv = document.createElement("div");
+  hdrDiv.style.cssText = "text-align:center;margin-bottom:12px";
+  hdrDiv.innerHTML = "<div style='font-size:10px;letter-spacing:2px;color:#00d4ff;border:1px solid rgba(0,212,255,0.2);border-radius:20px;display:inline-block;padding:2px 14px;margin-bottom:6px'>GS DERIVATIVES DASHBOARD &middot; JPX自動取得</div>"
+    + "<h1 style='margin:0;font-size:16px;font-weight:700;color:#fff'>Goldman Sachs &#8212; 日経225 先物・オプション 建玉分析</h1>"
+    + "<div style='margin-top:4px;font-size:10px;display:flex;justify-content:center;align-items:center;gap:8px'>"
+    + (loading ? "<span style='color:#ffb74d'>&#9203; 取得中...</span>"
+       : hasData ? "<span style='color:#00e676'>&#10003; 自動取得</span><span style='color:#4a6080'> | </span><span style='color:#4a6060'>" + upd + "</span>"
+       : "<span style='color:#ff5252'>&#9888; 取得失敗</span>")
+    + "</div>";
+  root.appendChild(hdrDiv);
+
+  // タブ
+  var tabRow = document.createElement("div");
+  tabRow.style.cssText = "display:flex;gap:4px;margin-bottom:12px;flex-wrap:wrap;align-items:center";
+  var TIDS = ["all","c1","c2","c3","c4","c5"];
+  var TLBS = ["全グラフ","①建玉残高","②取引量","③時系列","④先物建玉","📝記録"];
+  for (var i = 0; i < TIDS.length; i++) {
+    (function(id, label) {
+      var btn = document.createElement("button");
+      var a = currentTab === id;
+      btn.style.cssText = "background:" + (a?"#00d4ff":"#1a2840") + ";color:" + (a?"#0e1520":"#90a4ae") + ";font-weight:" + (a?700:400);
+      btn.textContent = label;
+      btn.addEventListener("click", function() { setTab(id); });
+      tabRow.appendChild(btn);
+    })(TIDS[i], TLBS[i]);
   }
-}
+  var reloadBtn = document.createElement("button");
+  reloadBtn.style.cssText = "background:#1a2840;color:#90a4ae;border:1px solid #2a3a50;margin-left:auto";
+  reloadBtn.innerHTML = "&#128260;";
+  reloadBtn.addEventListener("click", function() { location.reload(true); });
+  tabRow.appendChild(reloadBtn);
+  root.appendChild(tabRow);
 
-function savePred(){
-  var memo=document.getElementById("pmemo");
-  var sq=document.getElementById("psq");
-  if(!memo||!sq)return;
-  var oiDate=liveData&&liveData.oi?liveData.oi.date:"";
-  var fh=liveData&&liveData.fut_oi_history?liveData.fut_oi_history:{};
-  var fDates=Object.keys(fh).sort();
-  var futDate=fDates.length?fDates[fDates.length-1]:"";
-  var rec={created:new Date().toISOString().slice(0,10),
-    oi_date:oiDate,fut_date:futDate,
-    nk225_dir:predState.nk225,topix_dir:predState.topix,
-    memo:memo.value,sq_date:sq.value,verified:false};
-  var recs=loadRecs();recs.push(rec);saveRecs(recs);setTab("c5");
-}
+  // グリッド
+  var grid = document.createElement("div");
+  if (currentTab === "all") grid.style.cssText = "display:grid;grid-template-columns:1fr 1fr;gap:12px";
 
-function verRec(idx){
-  var nkEl=document.getElementById("vr-nk-"+idx);
-  var txEl=document.getElementById("vr-tx-"+idx);
-  if(!nkEl||!txEl)return;
-  var recs=loadRecs();if(!recs[idx])return;
-  recs[idx].nk225_actual=nkEl.value;
-  recs[idx].topix_actual=txEl.value;
-  recs[idx].nk225_correct=recs[idx].nk225_dir===nkEl.value;
-  recs[idx].topix_correct=recs[idx].topix_dir===txEl.value;
-  recs[idx].verified=true;
-  recs[idx].verified_date=new Date().toISOString().slice(0,10);
-  saveRecs(recs);setTab("c5");
-}
-
-function delRec(idx){
-  var recs=loadRecs();recs.splice(idx,1);saveRecs(recs);setTab("c5");
-}
-
-function setTab(id){currentTab=id;render();}
-function setTabN(i){setTab(["all","c1","c2","c3","c4","c5"][i]);}
-function show(id){
-  if(id==="c5")return currentTab==="c5";
-  return currentTab==="all"||currentTab===id;
-}
-
-function safeCard(ok,color,label,fn){
-  if(!ok)return"";
-  try{return"<div class='card'><div class='hdr' style='background:"+color+"'>"+label+"</div>"+fn()+"</div>";}
-  catch(e){return"<div class='card'><div style='padding:12px;color:red;font-size:11px;background:#fff'>Error: "+e.message+"</div></div>";}
-}
-
-function render(){
-  var loading=arguments[0]===true;
-  var upd=arguments[1]||"";
-  var hasData=!!liveData;
-  var status=loading
-    ?"<span style='color:#ffb74d'>&#9203; 取得中...</span>"
-    :hasData
-      ?"<span style='color:#00e676'>&#10003; 自動取得</span><span style='color:#4a6080'> | </span><span style='color:#4a6060'>"+upd+"</span>"
-      :"<span style='color:#ff5252'>&#9888; 取得失敗</span>";
-  var TIDS=["all","c1","c2","c3","c4","c5"];
-  var TLBS=["\u5168\u30b0\u30e9\u30d5","&#9312;\u5efa\u7389\u6b8b\u9ad8","&#9313;\u53d6\u5f15\u91cf","&#9314;\u6642\u7cfb\u5217","&#9315;\u5148\u7269\u5efa\u7389","&#128221;\u8a18\u9332"];
-  var tabH="";
-  for(var i=0;i<TIDS.length;i++){
-    var a=currentTab===TIDS[i];
-    tabH+='<button onclick="setTabN('+i+')" style="background:'+(a?'#00d4ff':'#1a2840')+';color:'+(a?'#0e1520':'#90a4ae')+';font-weight:'+(a?700:400)+'">'+ TLBS[i]+'</button>';
+  function addCard(show, color, label, buildFn, isHTML) {
+    if (!show) return;
+    var card = document.createElement("div");
+    card.className = "card";
+    var h = document.createElement("div");
+    h.className = "hdr"; h.style.background = color; h.textContent = label;
+    card.appendChild(h);
+    try {
+      if (isHTML) {
+        var inner = document.createElement("div");
+        inner.innerHTML = buildFn();
+        card.appendChild(inner);
+      } else {
+        card.appendChild(buildFn());
+      }
+    } catch(e) {
+      var err = document.createElement("div");
+      err.style.cssText = "padding:12px;color:red;font-size:11px;background:#fff";
+      err.textContent = "Error: " + e.message;
+      card.appendChild(err);
+    }
+    grid.appendChild(card);
   }
+
+  var showAll = currentTab === "all";
+  addCard(showAll || currentTab==="c1", "#1565c0", "① 建玉残高（行使価格別）", buildChart1, false);
+  addCard(showAll || currentTab==="c2", "#b71c1c", "② 当日取引量（行使価格別）", buildChart2HTML, true);
+  addCard(showAll || currentTab==="c3", "#1b5e20", "③ 先物取引量 時系列", buildChart3HTML, true);
+  addCard(showAll || currentTab==="c4", "#4a148c", "④ 先物建玉推移（散布図）", buildChart4HTML, true);
+
+  if (currentTab === "c5") {
+    var c5card = document.createElement("div");
+    c5card.className = "card";
+    try { c5card.appendChild(buildChart5()); }
+    catch(e) { c5card.innerHTML = "<div style='padding:12px;color:red;background:#fff'>Error: " + e.message + "</div>"; }
+    grid.appendChild(c5card);
   }
-  tabH+="<button onclick='location.reload(true)' style='background:#1a2840;color:#90a4ae;border:1px solid #2a3a50;margin-left:auto'>&#128260;</button>";
-  var grid=currentTab==="all"?"display:grid;grid-template-columns:1fr 1fr;gap:12px":"";
-  var c1=safeCard(show("c1"),"#1565c0","&#9312; 建玉残高（行使価格別）",makeChart1);
-  var c2=safeCard(show("c2"),"#b71c1c","&#9313; 当日取引量（行使価格別）",makeChart2);
-  var c3=safeCard(show("c3"),"#1b5e20","&#9314; 先物取引量 時系列",makeChart3);
-  var c4=safeCard(show("c4"),"#4a148c","&#9315; 先物建玉推移（散布図）",makeChart4);
-  var c5="";
-  if(currentTab==="c5"){
-    try{c5="<div class='card'>"+makeChart5()+"</div>";}
-    catch(e){c5="<div class='card'><div style='padding:12px;color:red;background:#fff'>Error:"+e.message+"</div></div>";}
-  }
-  document.getElementById("root").innerHTML=
-    "<div style='text-align:center;margin-bottom:12px'>"
-    +"<div style='font-size:10px;letter-spacing:2px;color:#00d4ff;border:1px solid rgba(0,212,255,0.2);border-radius:20px;display:inline-block;padding:2px 14px;margin-bottom:6px'>GS DERIVATIVES DASHBOARD &middot; JPX自動取得</div>"
-    +"<h1 style='margin:0;font-size:16px;font-weight:700;color:#fff'>Goldman Sachs &#8212; 日経225 先物・オプション 建玉分析</h1>"
-    +"<div style='margin-top:4px;font-size:10px;display:flex;justify-content:center;align-items:center;gap:8px'>"+status+"</div></div>"
-    +"<div style='display:flex;gap:4px;margin-bottom:12px;flex-wrap:wrap;align-items:center'>"+tabH+"</div>"
-    +"<div style='"+grid+"'>"+c1+c2+c3+c4+"</div>"+c5
-    +"<div style='text-align:center;color:#2a4060;font-size:9px;margin-top:12px'>&#10033; JPX公開データに基づきます。投資判断の参考情報です。</div>";
+
+  root.appendChild(grid);
+
+  var footer = document.createElement("div");
+  footer.style.cssText = "text-align:center;color:#2a4060;font-size:9px;margin-top:12px";
+  footer.textContent = "※ JPX公開データに基づきます。投資判断の参考情報です。";
+  root.appendChild(footer);
 }
 
-render(true,"");
-fetch(JSON_URL+"?t="+Date.now())
-  .then(function(r){return r.json();})
-  .then(function(j){liveData=j;render(false,j.updated||"");})
-  .catch(function(e){console.log("fetch error",e);render(false,"");});
+render(true, "");
+fetch(JSON_URL + "?t=" + Date.now())
+  .then(function(r) { return r.json(); })
+  .then(function(j) { liveData = j; render(false, j.updated || ""); })
+  .catch(function(e) { console.log("fetch error", e); render(false, ""); });
 </script>
 </body>
 </html>
