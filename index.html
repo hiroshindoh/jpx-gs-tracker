@@ -8,21 +8,31 @@
 <title>GS Derivatives Dashboard</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:#0e1520;font-family:'Helvetica Neue',sans-serif;color:#fff;min-height:100vh;padding:12px}
+body{background:#0e1520;font-family:'Helvetica Neue',sans-serif;color:#fff;padding:12px}
 button{cursor:pointer;border:none;border-radius:6px;padding:5px 11px;font-size:11px}
 .card{border-radius:8px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,0.5);margin-bottom:12px}
 .hdr{padding:5px 10px;font-size:10px;font-weight:700;color:#fff}
 .ci{background:#fff;padding:10px 6px}
-textarea,input,select{font-family:'Helvetica Neue',sans-serif}
 </style>
 </head>
 <body>
-<div id="root"></div>
+<div id="root"><div style="color:#ffb74d;padding:20px;text-align:center">読み込み中...</div></div>
 <div id="tip" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border:1px solid #bbb;border-radius:8px;padding:10px 14px;font-size:12px;z-index:999;box-shadow:0 4px 12px rgba(0,0,0,.15);pointer-events:none;color:#333;display:none"></div>
+<script>
+// エラーを画面に表示
+window.onerror = function(msg, url, line, col, err) {
+  document.getElementById("root").innerHTML =
+    "<div style='background:#c62828;color:#fff;padding:16px;border-radius:8px;margin:12px 0;font-size:12px'>"
+    + "<b>JS Error (line "+line+"):</b><br>" + msg
+    + (err && err.stack ? "<br><pre style='font-size:9px;margin-top:8px;white-space:pre-wrap'>"+err.stack+"</pre>" : "")
+    + "</div>";
+  return true;
+};
+</script>
 <script>
 var JSON_URL="https://hiroshindoh.github.io/jpx-gs-tracker/gs_data.json";
 var BUY="#1976d2",SELL="#d32f2f";
-var ATM_LINE=54000,DISCLOSE_FROM=53125;
+var ATM_LINE=54000;
 var liveData=null,currentTab="all";
 var predState={nk225:"down",topix:"up"};
 
@@ -33,7 +43,6 @@ var FALLBACK_OI={date:"2026-03-13",gs:[
   {strike:53375,type:"PUT",side:"Sell",qty:6}
 ],strikes:{min:53125,max:54125}};
 
-// ── ユーティリティ ──
 function showTip(s,bl,bv,sl,sv){
   var t=document.getElementById("tip");
   t.innerHTML="<b>"+s.toLocaleString()+"円</b><br><span style='color:"+BUY+"'>"+bl+": "+bv+"枚</span><br><span style='color:"+SELL+"'>"+sl+": "+sv+"枚</span>";
@@ -57,51 +66,56 @@ function buildSnapshot(oi){
   for(var s=50000;s<=57000;s+=125){
     map[s]={strike:s,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:s>=mn&&s<=mx};
   }
-  (oi.gs||[]).forEach(function(d){
+  var gs=oi.gs||[];
+  for(var i=0;i<gs.length;i++){
+    var d=gs[i];
     if(!map[d.strike])map[d.strike]={strike:d.strike,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:true};
     if(d.type==="CALL"&&d.side==="Buy")map[d.strike].callBuy=d.qty;
     if(d.type==="CALL"&&d.side==="Sell")map[d.strike].callSell=d.qty;
     if(d.type==="PUT"&&d.side==="Buy")map[d.strike].putBuy=d.qty;
     if(d.type==="PUT"&&d.side==="Sell")map[d.strike].putSell=d.qty;
-  });
+  }
   return map;
 }
 
-// ── グラフ① ──
 function makeChart1(){
   var cur=liveData&&liveData.oi?liveData.oi:FALLBACK_OI;
   var hist=liveData&&liveData.oi_history?liveData.oi_history:[];
-  var ZCOL=["#fff9c4","#ffe0b2","#f3e5f5","#e8f5e9","#e3f2fd"];
-  var snaps=hist.map(function(h,i){
-    return{date:h.date,map:buildSnapshot(h),strikes:h.strikes,
+  var ZCOL=["#fff9c4","#ffe0b2","#f3e5f5","#e8f5e9"];
+  var snaps=[];
+  for(var i=0;i<hist.length;i++){
+    var h=hist[i];
+    snaps.push({date:h.date,map:buildSnapshot(h),strikes:h.strikes,
       color:ZCOL[i]||"#f5f5f5",
       label:h.date&&h.date.length>=10?h.date.slice(5).replace("-","/"):h.date||"",
-      isCur:h.date===cur.date};
-  });
+      isCur:h.date===cur.date});
+  }
   var curSnap=null;
   for(var i=0;i<snaps.length;i++){if(snaps[i].isCur){curSnap=snaps[i];break;}}
   if(!curSnap)curSnap={date:cur.date,map:buildSnapshot(cur),strikes:cur.strikes,
-    color:"#fffde7",label:cur.date&&cur.date.length>=10?cur.date.slice(5).replace("-","/"):"03/13",isCur:true};
-  var allS=[];for(var s=51000;s<=57000;s+=125)allS.push(s);
-  var cd=allS.map(function(strike){
-    var d2=curSnap.map[strike]||{strike:strike,callBuy:0,callSell:0,putBuy:0,putSell:0,disclosed:false};
-    var zones=snaps.filter(function(sn){
-      var mn=sn.strikes&&sn.strikes.min?sn.strikes.min:0;
-      var mx=sn.strikes&&sn.strikes.max?sn.strikes.max:0;
-      return strike>=mn&&strike<=mx;
-    });
-    return{strike:strike,callBuy:d2.callBuy,callSell:d2.callSell,putBuy:d2.putBuy,putSell:d2.putSell,zones:zones};
-  });
+    color:"#fffde7",
+    label:cur.date&&cur.date.length>=10?cur.date.slice(5).replace("-","/"):"03/13",
+    isCur:true};
+  var allS=[];
+  for(var s=51000;s<=57000;s+=125)allS.push(s);
   var ct=0,pt=0;
-  Object.keys(curSnap.map).forEach(function(k){ct+=curSnap.map[k].callBuy;pt+=curSnap.map[k].putBuy;});
-  snaps.filter(function(s){return!s.isCur;}).forEach(function(s){
-    Object.keys(s.map).forEach(function(k){
-      if(!curSnap.map[k]||curSnap.map[k].callBuy===0)ct+=s.map[k].callBuy;
-      if(!curSnap.map[k]||curSnap.map[k].putBuy===0)pt+=s.map[k].putBuy;
-    });
-  });
+  var csKeys=Object.keys(curSnap.map);
+  for(var i=0;i<csKeys.length;i++){
+    ct+=curSnap.map[csKeys[i]].callBuy;
+    pt+=curSnap.map[csKeys[i]].putBuy;
+  }
+  var oldSnaps=[];
+  for(var i=0;i<snaps.length;i++){if(!snaps[i].isCur)oldSnaps.push(snaps[i]);}
+  for(var i=0;i<oldSnaps.length;i++){
+    var sKeys=Object.keys(oldSnaps[i].map);
+    for(var j=0;j<sKeys.length;j++){
+      var k=sKeys[j];
+      if(!curSnap.map[k]||curSnap.map[k].callBuy===0)ct+=oldSnaps[i].map[k].callBuy;
+      if(!curSnap.map[k]||curSnap.map[k].putBuy===0)pt+=oldSnaps[i].map[k].putBuy;
+    }
+  }
   var pcr=(ct+pt)>0?(pt/(ct+pt)*100).toFixed(2):"0.00";
-  var data=cd.slice().reverse(),MAX=200,RH=11;
+  var MAX=200,RH=11;
   var pie="";
   if(ct+pt>0){
     var r=22,cx=28,cy=30,tot=ct+pt,a=(ct/tot)*2*Math.PI;
@@ -119,40 +133,64 @@ function makeChart1(){
       +"<text x='60' y='36' font-size='12' font-weight='700' fill='"+BUY+"'>"+pcr+"%</text>"
       +"</svg>";
   }
+  var cd=[];
+  for(var i=0;i<allS.length;i++){
+    var strike=allS[i];
+    var d2=curSnap.map[strike]||{strike:strike,callBuy:0,callSell:0,putBuy:0,putSell:0};
+    var zones=[];
+    for(var j=0;j<snaps.length;j++){
+      var mn2=snaps[j].strikes&&snaps[j].strikes.min?snaps[j].strikes.min:0;
+      var mx2=snaps[j].strikes&&snaps[j].strikes.max?snaps[j].strikes.max:0;
+      if(strike>=mn2&&strike<=mx2)zones.push(snaps[j]);
+    }
+    cd.push({strike:strike,callBuy:d2.callBuy,callSell:d2.callSell,putBuy:d2.putBuy,putSell:d2.putSell,zones:zones});
+  }
+  var data=cd.slice().reverse();
   var rows="";
-  data.forEach(function(d){
+  for(var i=0;i<data.length;i++){
+    var d=data[i];
     var isAtm=d.strike===ATM_LINE,BH=RH-3;
     var bg=d.zones&&d.zones.length>0?d.zones[d.zones.length-1].color:"#fff";
-    var lbl="",lc=0;
-    if(d.zones)d.zones.forEach(function(z){
-      if(d.strike===(z.strikes&&z.strikes.max?z.strikes.max:null)){
-        lbl+="<div style='position:absolute;left:0;top:"+(lc*10)+"px;z-index:"+(10+lc)+";font-size:7px;font-weight:700;color:#333;padding:0 4px;line-height:10px;pointer-events:none'>開示範囲（"+z.label+"）</div>";
-        lc++;
+    var lbl="";
+    for(var j=0;j<d.zones.length;j++){
+      var z=d.zones[j];
+      if(z.strikes&&z.strikes.max&&d.strike===z.strikes.max){
+        lbl+="<div style='position:absolute;left:0;top:"+(j*10)+"px;z-index:"+(10+j)+";font-size:7px;font-weight:700;color:#333;padding:0 4px;line-height:10px;pointer-events:none'>"
+          +"開示範囲（"+z.label+"）</div>";
       }
-    });
+    }
     var oC="",oP="";
-    snaps.filter(function(sn){return!sn.isCur;}).forEach(function(sn){
-      var o=sn.map[d.strike];if(!o)return;
+    for(var j=0;j<oldSnaps.length;j++){
+      var o=oldSnaps[j].map[d.strike];
+      if(!o)continue;
       if(o.callBuy>0)oC+="<div style='position:absolute;right:0;top:1px;height:"+BH+"px;width:"+Math.min(o.callBuy/MAX*100,100)+"%;background:rgba(25,118,210,0.25)'></div>";
       if(o.callSell>0)oC+="<div style='position:absolute;right:"+Math.min(o.callBuy/MAX*100,100)+"%;top:1px;height:"+BH+"px;width:"+Math.min(o.callSell/MAX*100,100)+"%;background:rgba(211,47,47,0.25)'></div>";
       if(o.putBuy>0)oP+="<div style='position:absolute;left:0;top:1px;height:"+BH+"px;width:"+Math.min(o.putBuy/MAX*100,100)+"%;background:rgba(25,118,210,0.25)'></div>";
       if(o.putSell>0)oP+="<div style='position:absolute;left:"+Math.min(o.putBuy/MAX*100,100)+"%;top:1px;height:"+BH+"px;width:"+Math.min(o.putSell/MAX*100,100)+"%;background:rgba(211,47,47,0.25)'></div>";
-    });
+    }
     var c2=curSnap.map[d.strike]||{callBuy:0,callSell:0,putBuy:0,putSell:0};
-    var cB=c2.callBuy>0?"<div style='position:absolute;right:0;top:1px;height:"+BH+"px;width:"+Math.min(c2.callBuy/MAX*100,100)+"%;background:"+BUY+"'></div>":"";
-    var cS=c2.callSell>0?"<div style='position:absolute;right:"+Math.min(c2.callBuy/MAX*100,100)+"%;top:1px;height:"+BH+"px;width:"+Math.min(c2.callSell/MAX*100,100)+"%;background:"+SELL+"'></div>":"";
-    var pB=c2.putBuy>0?"<div style='position:absolute;left:0;top:1px;height:"+BH+"px;width:"+Math.min(c2.putBuy/MAX*100,100)+"%;background:"+BUY+"'></div>":"";
-    var pS=c2.putSell>0?"<div style='position:absolute;left:"+Math.min(c2.putBuy/MAX*100,100)+"%;top:1px;height:"+BH+"px;width:"+Math.min(c2.putSell/MAX*100,100)+"%;background:"+SELL+"'></div>":"";
+    var cBw=Math.min(c2.callBuy/MAX*100,100),cSw=Math.min(c2.callSell/MAX*100,100);
+    var pBw=Math.min(c2.putBuy/MAX*100,100),pSw=Math.min(c2.putSell/MAX*100,100);
+    var cB=c2.callBuy>0?"<div style='position:absolute;right:0;top:1px;height:"+BH+"px;width:"+cBw+"%;background:"+BUY+"'></div>":"";
+    var cS=c2.callSell>0?"<div style='position:absolute;right:"+cBw+"%;top:1px;height:"+BH+"px;width:"+cSw+"%;background:"+SELL+"'></div>":"";
+    var pB=c2.putBuy>0?"<div style='position:absolute;left:0;top:1px;height:"+BH+"px;width:"+pBw+"%;background:"+BUY+"'></div>":"";
+    var pS=c2.putSell>0?"<div style='position:absolute;left:"+pBw+"%;top:1px;height:"+BH+"px;width:"+pSw+"%;background:"+SELL+"'></div>":"";
     rows+="<div style='position:relative'>"+lbl
       +"<div style='display:grid;grid-template-columns:1fr 68px 1fr;height:"+RH+"px'>"
-      +"<div style='background:"+bg+";position:relative;overflow:hidden;border-right:1px solid #ccc' onmouseenter='showTip("+d.strike+","Buy","+c2.callBuy+","Sell","+c2.callSell+")'>"
+      +"<div style='background:"+bg+";position:relative;overflow:hidden;border-right:1px solid #ccc'"
+      +" onmouseenter="showTip("+d.strike+",'Buy',"+c2.callBuy+",'Sell',"+c2.callSell+")">"
       +oC+cB+cS+"</div>"
       +"<div style='height:"+RH+"px;display:flex;align-items:center;justify-content:center;font-size:7px;font-weight:"+(isAtm?700:400)+";color:#555;background:"+bg+"'>"+d.strike.toLocaleString()+"</div>"
-      +"<div style='background:"+bg+";position:relative;overflow:hidden;border-left:1px solid #ccc' onmouseenter='showTip("+d.strike+","Buy","+c2.putBuy+","Sell","+c2.putSell+")'>"
+      +"<div style='background:"+bg+";position:relative;overflow:hidden;border-left:1px solid #ccc'"
+      +" onmouseenter="showTip("+d.strike+",'Buy',"+c2.putBuy+",'Sell',"+c2.putSell+")">"
       +oP+pB+pS+"</div>"
       +"</div></div>";
-  });
-  var lgnd=snaps.map(function(s){return "<span style='margin-right:6px'><span style='display:inline-block;width:11px;height:9px;background:"+s.color+";border:1px solid #ccc;vertical-align:middle'></span><span style='font-size:8px'> "+s.label+"</span></span>";}).join("");
+  }
+  var lgnd="";
+  for(var i=0;i<snaps.length;i++){
+    lgnd+="<span style='margin-right:6px'><span style='display:inline-block;width:11px;height:9px;background:"+snaps[i].color+";border:1px solid #ccc;vertical-align:middle'></span>"
+      +" <span style='font-size:8px'>"+snaps[i].label+"</span></span>";
+  }
   return "<div class='ci' onmouseleave='hideTip()'>"
     +"<div style='display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:3px'>"
     +"<div><div style='font-weight:700;font-size:12px'>Goldman_Sachs_Japan_CoLtd</div>"
@@ -161,54 +199,64 @@ function makeChart1(){
     +"<div style='display:flex;justify-content:space-between;font-size:7px;color:#888'><span>200</span><span>150</span><span>100</span><span>50</span><span>0</span></div><div></div>"
     +"<div style='display:flex;justify-content:space-between;font-size:7px;color:#888'><span>0</span><span>50</span><span>100</span><span>150</span><span>200</span></div></div>"
     +"<div style='display:grid;grid-template-columns:1fr 68px 1fr;border-bottom:1px solid #ccc'>"
-    +"<div style='text-align:center;background:#f5f5f5;font-size:11px;font-weight:700;padding:3px 0'>CALL</div><div style='background:#f5f5f5'></div>"
+    +"<div style='text-align:center;background:#f5f5f5;font-size:11px;font-weight:700;padding:3px 0'>CALL</div>"
+    +"<div style='background:#f5f5f5'></div>"
     +"<div style='text-align:center;background:#f5f5f5;font-size:11px;font-weight:700;padding:3px 0'>PUT</div></div>"
     +rows
     +"<div style='margin-top:5px;padding:4px 6px;background:#f5f5f5;border-radius:4px;display:flex;gap:6px;flex-wrap:wrap;align-items:center'>"
-    +lgnd+"<span style='color:"+BUY+";font-size:8px'>&#9632;Buy</span><span style='color:"+SELL+";font-size:8px'>&#9632;Sell</span>"
+    +lgnd+"<span style='color:"+BUY+";font-size:8px'>&#9632;Buy</span>"
+    +"<span style='color:"+SELL+";font-size:8px'>&#9632;Sell</span>"
     +"<span style='color:rgba(25,118,210,0.5);font-size:8px'>&#9632;過去</span></div></div>";
 }
 
-// ── グラフ② ──
 function makeChart2(){
   var vd=null;
   if(liveData&&liveData.vol&&liveData.vol.gs&&liveData.vol.gs.length){
-    var opts=liveData.vol.gs.filter(function(d){return d.type==="CALL"||d.type==="PUT";});
+    var opts=[];
+    for(var i=0;i<liveData.vol.gs.length;i++){
+      if(liveData.vol.gs[i].type==="CALL"||liveData.vol.gs[i].type==="PUT")opts.push(liveData.vol.gs[i]);
+    }
     if(opts.length){
-      var ss={};
-      opts.forEach(function(d){if(d.strike)ss[d.strike]=true;});
+      var m={};
       var mn=liveData.oi&&liveData.oi.strikes?liveData.oi.strikes.min||51000:51000;
       var mx=liveData.oi&&liveData.oi.strikes?liveData.oi.strikes.max||56000:56000;
-      for(var s=mn;s<=mx;s+=125)ss[s]=true;
-      var m={};
-      Object.keys(ss).forEach(function(k){m[k]={strike:parseInt(k),callVol:0,putVol:0};});
-      opts.forEach(function(d){
+      for(var s=mn;s<=mx;s+=125)m[s]={strike:s,callVol:0,putVol:0};
+      for(var i=0;i<opts.length;i++){
+        var d=opts[i];
         if(!m[d.strike])m[d.strike]={strike:d.strike,callVol:0,putVol:0};
         if(d.type==="CALL")m[d.strike].callVol+=d.volume;
         else m[d.strike].putVol+=d.volume;
-      });
-      vd=Object.values(m).sort(function(a,b){return a.strike-b.strike;});
+      }
+      vd=[];var keys=Object.keys(m);
+      for(var i=0;i<keys.length;i++)vd.push(m[keys[i]]);
+      vd.sort(function(a,b){return a.strike-b.strike;});
     }
   }
-  if(!vd){var STRIKES=[];for(var s=51000;s<=56000;s+=125)STRIKES.push(s);vd=STRIKES.map(function(s){return{strike:s,callVol:0,putVol:s===51000?25:0};});}
-  var data=vd.slice().reverse();
+  if(!vd){
+    vd=[];for(var s=51000;s<=56000;s+=125)vd.push({strike:s,callVol:0,putVol:s===51000?25:0});
+  }
   var pt=0,ct=0;
-  vd.forEach(function(d){pt+=d.putVol;ct+=d.callVol;});
+  for(var i=0;i<vd.length;i++){pt+=vd[i].putVol;ct+=vd[i].callVol;}
   var pcr=ct===0?"100.00":(pt/(ct+pt)*100).toFixed(2);
-  var vals=vd.map(function(d){return Math.max(d.callVol,d.putVol);});
-  var MAX=Math.max.apply(null,vals);MAX=Math.max(MAX,10);
+  var MAX=0;
+  for(var i=0;i<vd.length;i++)MAX=Math.max(MAX,vd[i].callVol,vd[i].putVol);
+  MAX=Math.max(MAX,10);
   var RH=13;
   var vdate=liveData&&liveData.vol&&liveData.vol.date?liveData.vol.date:"";
+  var data=vd.slice().reverse();
   var rows="";
-  data.forEach(function(d){
+  for(var i=0;i<data.length;i++){
+    var d=data[i];
     var hc=d.callVol>0,hp=d.putVol>0,act=hc||hp;
     rows+="<div style='display:grid;grid-template-columns:1fr 64px 1fr;height:"+RH+"px'>"
       +"<div style='background:#fce8e8;position:relative;overflow:hidden'>"
-      +(hc?"<div style='position:absolute;right:0;top:1px;height:"+(RH-2)+"px;width:"+Math.min(d.callVol/MAX*100,100)+"%;background:#5b9bd5'></div>":"")+"</div>"
+      +(hc?"<div style='position:absolute;right:0;top:1px;height:"+(RH-2)+"px;width:"+Math.min(d.callVol/MAX*100,100)+"%;background:#5b9bd5'></div>":"")
+      +"</div>"
       +"<div style='height:"+RH+"px;display:flex;align-items:center;justify-content:center;font-size:"+(act?9:7)+"px;font-weight:"+(act?700:400)+";color:"+(act?"#e65100":"#777")+";background:"+(act?"#fff3e0":"#f9f9f9")+"'>"+d.strike.toLocaleString()+"</div>"
       +"<div style='background:#e8f4fd;position:relative;overflow:hidden'>"
-      +(hp?"<div style='position:absolute;left:0;top:1px;height:"+(RH-2)+"px;width:"+Math.min(d.putVol/MAX*100,100)+"%;background:"+SELL+"'></div>":"")+"</div></div>";
-  });
+      +(hp?"<div style='position:absolute;left:0;top:1px;height:"+(RH-2)+"px;width:"+Math.min(d.putVol/MAX*100,100)+"%;background:"+SELL+"'></div>":"")
+      +"</div></div>";
+  }
   return "<div class='ci'>"
     +"<div style='font-weight:700;font-size:12px;text-align:center'>Goldman_Sachs_Japan_CoLtd</div>"
     +"<div style='font-size:11px;text-align:center;color:#555;margin-bottom:1px'>本日の取引量"+(vdate?"（"+vdate+"）":"")+"</div>"
@@ -223,11 +271,12 @@ function makeChart2(){
     +rows+"</div>";
 }
 
-// ── グラフ③ ──
 function makeChart3(){
   var hist=liveData&&liveData.history?liveData.history:{};
   var dates=Object.keys(hist).sort();
-  if(!dates.length)return "<div style='background:#1a1a2e;padding:24px;color:#888;text-align:center'><div style='font-size:13px;color:#fff;margin-bottom:8px'>GSAX 先物取引量 時系列</div><div style='font-size:11px'>データ蓄積中...</div></div>";
+  if(!dates.length)return "<div style='background:#1a1a2e;padding:24px;color:#888;text-align:center'>"
+    +"<div style='font-size:13px;color:#fff;margin-bottom:8px'>GSAX 先物取引量 時系列</div>"
+    +"<div style='font-size:11px'>データ蓄積中...</div></div>";
   var ld=dates[dates.length-1];
   var SDEF=[
     {key:"L6",label:"ラージ期近(6月)",color:"#ef5350"},
@@ -239,15 +288,20 @@ function makeChart3(){
     {key:"M6",label:"ミニ期先先(6月)",color:"#ff9800"}
   ];
   var sHTML="";
-  SDEF.forEach(function(s){
-    var vals=dates.map(function(d){return hist[d][s.key]||0;});
-    var maxV=Math.max.apply(null,vals);if(maxV<=1)return;
+  for(var si=0;si<SDEF.length;si++){
+    var s=SDEF[si];
+    var vals=[];
+    for(var i=0;i<dates.length;i++)vals.push(hist[dates[i]][s.key]||0);
+    var maxV=0;for(var i=0;i<vals.length;i++)maxV=Math.max(maxV,vals[i]);
+    if(maxV<=1)continue;
     var last=hist[ld][s.key]||0;
     var W=300,H=36;
-    var pts=vals.map(function(v,i){
+    var pts="";
+    for(var i=0;i<vals.length;i++){
       var x=dates.length>1?i/(dates.length-1)*W:W/2;
-      return x+","+(H-(v/maxV)*(H-4)-2);
-    }).join(" ");
+      var y=H-(vals[i]/maxV)*(H-4)-2;
+      pts+=(i===0?"":"")+x+","+y+" ";
+    }
     sHTML+="<div style='margin-bottom:1px'><div style='display:flex;align-items:center'>"
       +"<div style='width:38px;font-size:7px;color:"+s.color+";text-align:right;padding-right:3px;flex-shrink:0'>"+maxV.toLocaleString()+"-</div>"
       +"<div style='flex:1;border-bottom:1px solid #2a3a50'>"
@@ -257,16 +311,15 @@ function makeChart3(){
       +"<div style='font-size:7px;color:#556;padding-left:2px'>0-</div></div>"
       +"<div style='width:44px;text-align:right;font-size:10px;color:"+(last>0?s.color:"#444")+";font-weight:700;padding-left:3px;flex-shrink:0'>"+(last>0?last.toLocaleString():"-")+"</div>"
       +"</div></div>";
-  });
-  var step=Math.max(1,Math.floor(dates.length/6));
-  var xL=dates.filter(function(_,i){return i%step===0;}).map(function(d){return d.slice(5).replace("-","/");}).join("  ");
+  }
+  var xL="";var step=Math.max(1,Math.floor(dates.length/6));
+  for(var i=0;i<dates.length;i+=step)xL+=dates[i].slice(5).replace("-","/")+"  ";
   return "<div style='background:#1a1a2e;padding:10px 6px;color:#fff'>"
     +"<div style='font-weight:700;font-size:13px;margin-bottom:2px'>GSAX 先物取引量 "+ld+"現在</div>"
     +"<div style='font-size:8px;color:#445;margin-bottom:4px'>JPX日次データより自動集計（"+dates.length+"営業日分）</div>"
     +sHTML+"<div style='font-size:7px;color:#888;margin-top:4px;padding-left:38px'>"+xL+"</div></div>";
 }
 
-// ── グラフ④ ──
 function makeChart4(){
   var fh=liveData&&liveData.fut_oi_history?liveData.fut_oi_history:{
     "2026-03-27":{NK225_2606:-13190,NK225_2609:27,MINI_2604:10000,MINI_2605:0,MINI_2606:0,TOPIX_2606:-30704,TOPIX_2609:-600},
@@ -275,53 +328,66 @@ function makeChart4(){
   var dates=Object.keys(fh).sort();
   if(!dates.length)return "<div style='padding:24px;color:#888;text-align:center'>データなし</div>";
   var SR=[
-    {id:"near",label:"期近(2606)",color:"#1976d2",gX:function(d){return d.NK225_2606||0;},gY:function(d){return d.TOPIX_2606||0;}},
-    {id:"far",label:"期先(2609)",color:"#d32f2f",gX:function(d){return d.NK225_2609||0;},gY:function(d){return d.TOPIX_2609||0;}},
-    {id:"mini",label:"mini換算",color:"#388e3c",gX:function(d){return((d.MINI_2604||0)+(d.MINI_2605||0)+(d.MINI_2606||0))/10;},gY:function(d){return 0;}}
+    {id:"near",label:"期近(2606)",color:"#1976d2",
+     gX:function(d){return d.NK225_2606||0;},gY:function(d){return d.TOPIX_2606||0;}},
+    {id:"far",label:"期先(2609)",color:"#d32f2f",
+     gX:function(d){return d.NK225_2609||0;},gY:function(d){return d.TOPIX_2609||0;}},
+    {id:"mini",label:"mini換算",color:"#388e3c",
+     gX:function(d){return((d.MINI_2604||0)+(d.MINI_2605||0)+(d.MINI_2606||0))/10;},
+     gY:function(d){return 0;}}
   ];
   var aX=[0],aY=[0];
-  dates.forEach(function(dt){
-    var d=fh[dt];
-    SR.forEach(function(s){aX.push(s.gX(d));aY.push(s.gY(d));});
-  });
-  var xMn=Math.min.apply(null,aX),xMx=Math.max.apply(null,aX);
-  var yMn=Math.min.apply(null,aY),yMx=Math.max.apply(null,aY);
+  for(var i=0;i<dates.length;i++){
+    var d=fh[dates[i]];
+    for(var j=0;j<SR.length;j++){aX.push(SR[j].gX(d));aY.push(SR[j].gY(d));}
+  }
+  var xMn=aX[0],xMx=aX[0];
+  for(var i=1;i<aX.length;i++){xMn=Math.min(xMn,aX[i]);xMx=Math.max(xMx,aX[i]);}
+  var yMn=aY[0],yMx=aY[0];
+  for(var i=1;i<aY.length;i++){yMn=Math.min(yMn,aY[i]);yMx=Math.max(yMx,aY[i]);}
   var xP=Math.max((xMx-xMn)*0.2,3000),yP=Math.max((yMx-yMn)*0.2,3000);
   var X0=xMn-xP,X1=xMx+xP,Y0=yMn-yP,Y1=yMx+yP;
   var W=300,H=240,PL=52,PR=12,PT=18,PB=36,CW=W-PL-PR,CH=H-PT-PB;
   function px(x){return PL+(x-X0)/(X1-X0)*CW;}
   function py(y){return PT+CH-(y-Y0)/(Y1-Y0)*CH;}
   var zx=Math.round(px(0)),zy=Math.round(py(0));
-  var steps=[500,1000,2000,5000,10000,20000,50000];
-  var xSt=steps[0],ySt=steps[0];
-  for(var i=0;i<steps.length;i++){if((X1-X0)/steps[i]<8){xSt=steps[i];break;}}
-  for(var i=0;i<steps.length;i++){if((Y1-Y0)/steps[i]<8){ySt=steps[i];break;}}
+  var stps=[500,1000,2000,5000,10000,20000,50000];
+  var xSt=stps[0],ySt=stps[0];
+  for(var i=0;i<stps.length;i++){if((X1-X0)/stps[i]<8){xSt=stps[i];break;}}
+  for(var i=0;i<stps.length;i++){if((Y1-Y0)/stps[i]<8){ySt=stps[i];break;}}
   var grid="";
   for(var v=Math.ceil(X0/xSt)*xSt;v<=X1;v+=xSt){
     var gx=Math.round(px(v));
-    grid+="<line x1='"+gx+"' y1='"+PT+"' x2='"+gx+"' y2='"+(PT+CH)+"' stroke='#eee' stroke-width='1'/>";
-    grid+="<text x='"+gx+"' y='"+(PT+CH+11)+"' text-anchor='middle' font-size='7' fill='#999'>"+(v/1000).toFixed(0)+"k</text>";
+    grid+="<line x1='"+gx+"' y1='"+PT+"' x2='"+gx+"' y2='"+(PT+CH)+"' stroke='#eee' stroke-width='1'/>"
+      +"<text x='"+gx+"' y='"+(PT+CH+11)+"' text-anchor='middle' font-size='7' fill='#999'>"+(v/1000).toFixed(0)+"k</text>";
   }
   for(var v=Math.ceil(Y0/ySt)*ySt;v<=Y1;v+=ySt){
     var gy=Math.round(py(v));
-    grid+="<line x1='"+PL+"' y1='"+gy+"' x2='"+(PL+CW)+"' y2='"+gy+"' stroke='#eee' stroke-width='1'/>";
-    grid+="<text x='"+(PL-4)+"' y='"+(gy+3)+"' text-anchor='end' font-size='7' fill='#999'>"+(v/1000).toFixed(0)+"k</text>";
+    grid+="<line x1='"+PL+"' y1='"+gy+"' x2='"+(PL+CW)+"' y2='"+gy+"' stroke='#eee' stroke-width='1'/>"
+      +"<text x='"+(PL-4)+"' y='"+(gy+3)+"' text-anchor='end' font-size='7' fill='#999'>"+(v/1000).toFixed(0)+"k</text>";
   }
   var svg="";
-  SR.forEach(function(s){
-    var pts=dates.map(function(dt){return{x:Math.round(px(s.gX(fh[dt]))*10)/10,y:Math.round(py(s.gY(fh[dt]))*10)/10};});
+  for(var si=0;si<SR.length;si++){
+    var s=SR[si];
+    var pts=[];
+    for(var i=0;i<dates.length;i++){
+      pts.push({x:Math.round(px(s.gX(fh[dates[i]]))*10)/10,y:Math.round(py(s.gY(fh[dates[i]]))*10)/10});
+    }
     if(pts.length>1){
-      var pd=pts.map(function(p,i){return(i===0?"M":"L")+p.x+","+p.y;}).join(" ");
+      var pd="";for(var i=0;i<pts.length;i++)pd+=(i===0?"M":"L")+pts[i].x+","+pts[i].y;
       svg+="<path d='"+pd+"' fill='none' stroke='"+s.color+"' stroke-width='2' opacity='0.7'/>";
     }
     for(var i=0;i<pts.length-1;i++){
       svg+="<circle cx='"+pts[i].x+"' cy='"+pts[i].y+"' r='4' fill='white' stroke='"+s.color+"' stroke-width='1.5'/>";
     }
     var lp=pts[pts.length-1];
-    svg+="<circle cx='"+lp.x+"' cy='"+lp.y+"' r='6' fill='"+s.color+"' fill-opacity='0.9' stroke='white' stroke-width='1'/>";
-    svg+="<text x='"+(lp.x+8)+"' y='"+(lp.y+4)+"' font-size='8' fill='"+s.color+"' font-weight='700'>"+s.label+"</text>";
-  });
-  var lgnd=SR.map(function(s){return "<span style='margin-right:10px;font-size:9px;color:"+s.color+"'>&#9679; "+s.label+"</span>";}).join("");
+    svg+="<circle cx='"+lp.x+"' cy='"+lp.y+"' r='6' fill='"+s.color+"' fill-opacity='0.9' stroke='white' stroke-width='1'/>"
+      +"<text x='"+(lp.x+8)+"' y='"+(lp.y+4)+"' font-size='8' fill='"+s.color+"' font-weight='700'>"+s.label+"</text>";
+  }
+  var lgnd="";
+  for(var si=0;si<SR.length;si++){
+    lgnd+="<span style='margin-right:10px;font-size:9px;color:"+SR[si].color+"'>&#9679; "+SR[si].label+"</span>";
+  }
   var dl=dates.length>1?dates[0].slice(5)+" 〜 "+dates[dates.length-1].slice(5):dates[0].slice(5);
   return "<div class='ci'>"
     +"<div style='font-weight:700;font-size:11px;text-align:center;margin-bottom:2px'>Goldman Sachs &#8212; 先物建玉推移</div>"
@@ -337,7 +403,6 @@ function makeChart4(){
     +"<div style='font-size:8px;color:#aaa;text-align:center'>&#9679; 最新 &#9675; 過去 mini=large&#247;10</div></div>";
 }
 
-// ── グラフ⑤ 予測記録 ──
 function makeChart5(){
   var recs=loadRecs();
   var oiDate=liveData&&liveData.oi?liveData.oi.date:"";
@@ -348,79 +413,77 @@ function makeChart5(){
   var DI={"up":"&#9650;上昇","down":"&#9660;下落","neutral":"&#8212;中立"};
   var out="<div style='background:#fff;padding:12px'>";
   out+="<div style='font-weight:700;font-size:13px;margin-bottom:10px;color:#1a237e'>&#128221; 予測記録</div>";
-  // 新規フォーム
   out+="<div style='background:#f5f5f5;border-radius:8px;padding:10px;margin-bottom:14px'>";
   out+="<div style='font-weight:700;font-size:11px;color:#555;margin-bottom:6px'>新規予測を作成</div>";
   out+="<div style='font-size:10px;color:#888;margin-bottom:8px'>参照: OI "+oiDate+" / 先物 "+futDate+"</div>";
   out+="<div style='font-size:11px;font-weight:600;margin-bottom:4px'>日経225</div>";
   out+="<div style='display:flex;gap:6px;margin-bottom:8px'>";
-  out+="<button id='nk-up' onclick='selDir("nk225","up")' style='flex:1;padding:6px;border-radius:6px;font-size:11px;border:2px solid #1976d2;background:#e3f2fd;color:#1976d2'>&#9650; 上昇</button>";
-  out+="<button id='nk-neu' onclick='selDir("nk225","neutral")' style='flex:1;padding:6px;border-radius:6px;font-size:11px;border:2px solid #ccc;background:#f5f5f5;color:#555'>&#8212; 中立</button>";
+  out+="<button id='nk-up' onclick='selDir("nk225","up")' style='flex:1;padding:6px;border-radius:6px;font-size:11px;border:2px solid #1976d2;background:#e3f2fd;color:#1976d2;opacity:0.4'>&#9650; 上昇</button>";
+  out+="<button id='nk-neu' onclick='selDir("nk225","neutral")' style='flex:1;padding:6px;border-radius:6px;font-size:11px;border:2px solid #ccc;background:#f5f5f5;color:#555;opacity:0.4'>&#8212; 中立</button>";
   out+="<button id='nk-dn' onclick='selDir("nk225","down")' style='flex:1;padding:6px;border-radius:6px;font-size:11px;border:2px solid #d32f2f;background:#ffebee;color:#d32f2f'>&#9660; 下落</button>";
   out+="</div>";
   out+="<div style='font-size:11px;font-weight:600;margin-bottom:4px'>TOPIX</div>";
   out+="<div style='display:flex;gap:6px;margin-bottom:8px'>";
   out+="<button id='tx-up' onclick='selDir("topix","up")' style='flex:1;padding:6px;border-radius:6px;font-size:11px;border:2px solid #1976d2;background:#e3f2fd;color:#1976d2'>&#9650; 上昇</button>";
-  out+="<button id='tx-neu' onclick='selDir("topix","neutral")' style='flex:1;padding:6px;border-radius:6px;font-size:11px;border:2px solid #ccc;background:#f5f5f5;color:#555'>&#8212; 中立</button>";
-  out+="<button id='tx-dn' onclick='selDir("topix","down")' style='flex:1;padding:6px;border-radius:6px;font-size:11px;border:2px solid #d32f2f;background:#ffebee;color:#d32f2f'>&#9660; 下落</button>";
+  out+="<button id='tx-neu' onclick='selDir("topix","neutral")' style='flex:1;padding:6px;border-radius:6px;font-size:11px;border:2px solid #ccc;background:#f5f5f5;color:#555;opacity:0.4'>&#8212; 中立</button>";
+  out+="<button id='tx-dn' onclick='selDir("topix","down")' style='flex:1;padding:6px;border-radius:6px;font-size:11px;border:2px solid #d32f2f;background:#ffebee;color:#d32f2f;opacity:0.4'>&#9660; 下落</button>";
   out+="</div>";
   out+="<div style='font-size:11px;font-weight:600;margin-bottom:4px'>根拠・メモ</div>";
-  out+="<textarea id='pmemo' rows='3' style='width:100%;border:1px solid #ddd;border-radius:6px;padding:6px;font-size:11px;resize:none'>53,000円コール売・プット買→日経SQまで下落予測。TOPIX6月限買転換→上昇予測。日経とTOPIXが乖離する局面か。</textarea>";
+  out+="<textarea id='pmemo' rows='3' style='width:100%;border:1px solid #ddd;border-radius:6px;padding:6px;font-size:11px;resize:none'>53,000円コール売・プット買→日経SQまで下落予測。TOPIX6月限買転換→上昇予測。</textarea>";
   out+="<div style='font-size:11px;font-weight:600;margin:6px 0 4px'>SQ日</div>";
   out+="<input id='psq' type='date' value='"+sqDate+"' style='border:1px solid #ddd;border-radius:6px;padding:6px;font-size:11px;width:100%'>";
   out+="<button onclick='savePred()' style='width:100%;margin-top:10px;padding:8px;background:#1976d2;color:#fff;border-radius:6px;font-size:12px;font-weight:700'>予測を保存</button>";
   out+="</div>";
-  // 記録一覧
   if(!recs.length){
     out+="<div style='color:#aaa;font-size:11px;text-align:center;padding:16px'>まだ記録がありません</div>";
   } else {
-    var rev=recs.slice().reverse();
-    rev.forEach(function(r,ri){
-      var realIdx=recs.length-1-ri;
+    for(var ri=recs.length-1;ri>=0;ri--){
+      var r=recs[ri];
       var verified=r.verified;
       var bc=verified?(r.nk225_correct&&r.topix_correct?"#4caf50":r.nk225_correct||r.topix_correct?"#ff9800":"#f44336"):"#e0e0e0";
       var bg2=verified?(r.nk225_correct&&r.topix_correct?"#e8f5e9":r.nk225_correct||r.topix_correct?"#fff8e1":"#ffebee"):"#fafafa";
       out+="<div style='border:2px solid "+bc+";border-radius:8px;padding:10px;margin-bottom:10px;background:"+bg2+"'>";
       out+="<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:6px'>";
       out+="<div style='font-size:10px;color:#888'>"+r.created+"</div>";
-      out+=(verified?"<span style='font-size:10px;font-weight:700;color:"+bc+"'>"+(r.nk225_correct&&r.topix_correct?"&#10003;完全的中":r.nk225_correct||r.topix_correct?"&#9889;部分的中":"&#10007;外れ")+"</span>":"<span style='font-size:10px;color:#aaa'>未検証</span>");
+      if(verified){
+        out+="<span style='font-size:10px;font-weight:700;color:"+bc+"'>"+(r.nk225_correct&&r.topix_correct?"&#10003;完全的中":r.nk225_correct||r.topix_correct?"&#9889;部分的中":"&#10007;外れ")+"</span>";
+      } else {
+        out+="<span style='font-size:10px;color:#aaa'>未検証</span>";
+      }
       out+="</div>";
       out+="<div style='font-size:10px;color:#888;margin-bottom:4px'>OI:"+r.oi_date+" / 先物:"+r.fut_date+" / SQ:"+r.sq_date+"</div>";
       out+="<div style='display:flex;gap:10px;margin-bottom:6px;font-size:11px'>";
       out+="<span style='color:#1565c0'><b>日経:</b> "+DI[r.nk225_dir]+"</span>";
       out+="<span style='color:#b71c1c'><b>TOPIX:</b> "+DI[r.topix_dir]+"</span>";
       out+="</div>";
-      out+="<div style='font-size:10px;color:#555;margin-bottom:8px;white-space:pre-wrap'>"+r.memo+"</div>";
+      out+="<div style='font-size:10px;color:#555;margin-bottom:8px'>"+r.memo+"</div>";
       if(!verified){
         out+="<div style='font-size:10px;font-weight:600;color:#555;margin-bottom:4px'>SQ結果を入力して検証</div>";
         out+="<div style='display:flex;gap:8px;margin-bottom:6px'>";
-        out+="<div style='flex:1;font-size:10px'>日経結果: <select id='vr-nk-"+realIdx+"' style='font-size:10px;border:1px solid #ddd;border-radius:4px'><option value='up'>上昇</option><option value='down'>下落</option><option value='neutral'>中立</option></select></div>";
-        out+="<div style='flex:1;font-size:10px'>TOPIX結果: <select id='vr-tx-"+realIdx+"' style='font-size:10px;border:1px solid #ddd;border-radius:4px'><option value='up'>上昇</option><option value='down'>下落</option><option value='neutral'>中立</option></select></div>";
+        out+="<div style='flex:1;font-size:10px'>日経: <select id='vr-nk-"+ri+"' style='font-size:10px;border:1px solid #ddd;border-radius:4px'><option value='up'>上昇</option><option value='down'>下落</option><option value='neutral'>中立</option></select></div>";
+        out+="<div style='flex:1;font-size:10px'>TOPIX: <select id='vr-tx-"+ri+"' style='font-size:10px;border:1px solid #ddd;border-radius:4px'><option value='up'>上昇</option><option value='down'>下落</option><option value='neutral'>中立</option></select></div>";
         out+="</div>";
-        out+="<button onclick='verRec("+realIdx+")' style='width:100%;padding:5px;background:#388e3c;color:#fff;border-radius:6px;font-size:11px;font-weight:600'>検証を確定</button>";
+        out+="<button onclick='verRec("+ri+")' style='width:100%;padding:5px;background:#388e3c;color:#fff;border-radius:6px;font-size:11px;font-weight:600'>検証を確定</button>";
       } else {
         out+="<div style='font-size:10px;color:#555'>実績: 日経 "+DI[r.nk225_actual]+" / TOPIX "+DI[r.topix_actual]+"</div>";
       }
-      out+="<button onclick='delRec("+realIdx+")' style='margin-top:4px;font-size:9px;color:#bbb;background:none;border:none;text-decoration:underline'>削除</button>";
+      out+="<button onclick='delRec("+ri+")' style='margin-top:4px;font-size:9px;color:#bbb;background:none;border:none;text-decoration:underline'>削除</button>";
       out+="</div>";
-    });
+    }
   }
   out+="</div>";
   return out;
 }
 
-// ── 予測操作 ──
 function selDir(target,dir){
   predState[target]=dir;
   var p=target==="nk225"?"nk":"tx";
-  var map={"up":"up","neutral":"neu","down":"dn"};
-  var inv={"up":"down","neutral":"neutral","down":"up"};
-  ["up","neu","dn"].forEach(function(k){
-    var el=document.getElementById(p+"-"+k);
-    if(!el)return;
-    var active=(k==="up"&&dir==="up")||(k==="neu"&&dir==="neutral")||(k==="dn"&&dir==="down");
-    el.style.opacity=active?"1":"0.4";
-  });
+  var ids=["up","neu","dn"];
+  var dirs=["up","neutral","down"];
+  for(var i=0;i<ids.length;i++){
+    var el=document.getElementById(p+"-"+ids[i]);
+    if(el)el.style.opacity=dirs[i]===dir?"1":"0.4";
+  }
 }
 
 function savePred(){
@@ -435,16 +498,14 @@ function savePred(){
     oi_date:oiDate,fut_date:futDate,
     nk225_dir:predState.nk225,topix_dir:predState.topix,
     memo:memo.value,sq_date:sq.value,verified:false};
-  var recs=loadRecs();recs.push(rec);saveRecs(recs);
-  setTab("c5");
+  var recs=loadRecs();recs.push(rec);saveRecs(recs);setTab("c5");
 }
 
 function verRec(idx){
   var nkEl=document.getElementById("vr-nk-"+idx);
   var txEl=document.getElementById("vr-tx-"+idx);
   if(!nkEl||!txEl)return;
-  var recs=loadRecs();
-  if(!recs[idx])return;
+  var recs=loadRecs();if(!recs[idx])return;
   recs[idx].nk225_actual=nkEl.value;
   recs[idx].topix_actual=txEl.value;
   recs[idx].nk225_correct=recs[idx].nk225_dir===nkEl.value;
@@ -458,7 +519,6 @@ function delRec(idx){
   var recs=loadRecs();recs.splice(idx,1);saveRecs(recs);setTab("c5");
 }
 
-// ── タブ・レンダー ──
 function setTab(id){currentTab=id;render();}
 function show(id){
   if(id==="c5")return currentTab==="c5";
@@ -468,42 +528,57 @@ function show(id){
 function safeCard(ok,color,label,fn){
   if(!ok)return"";
   try{return"<div class='card'><div class='hdr' style='background:"+color+"'>"+label+"</div>"+fn()+"</div>";}
-  catch(e){return"<div class='card'><div style='padding:12px;color:red;font-size:11px'>Error: "+e.message+"</div></div>";}
+  catch(e){return"<div class='card'><div style='padding:12px;color:red;font-size:11px;background:#fff'>Error: "+e.message+"</div></div>";}
 }
 
 function render(){
-  var loading=arguments[0]||false;
+  var loading=arguments[0]===true;
   var upd=arguments[1]||"";
   var hasData=!!liveData;
-  var status=loading?"<span style='color:#ffb74d'>&#9203; 取得中...</span>"
-    :hasData?"<span style='color:#00e676'>&#10003; 自動取得</span><span style='color:#4a6080'> | </span><span style='color:#4a6060'>"+upd+"</span>"
-    :"<span style='color:#ff5252'>&#9888; 取得失敗</span>";
-  var tabs=[{id:"all",label:"全グラフ"},{id:"c1",label:"①建玉残高"},{id:"c2",label:"②取引量"},{id:"c3",label:"③時系列"},{id:"c4",label:"④先物建玉"},{id:"c5",label:"&#128221;記録"}];
-  var tabH=tabs.map(function(t){
-    var a=currentTab===t.id;
-    return "<button onclick='setTab(""+t.id+"")' style='background:"+(a?"#00d4ff":"#1a2840")+";color:"+(a?"#0e1520":"#90a4ae")+";font-weight:"+(a?700:400)+"'>"+t.label+"</button>";
-  }).join("")+"<button onclick='location.reload(true)' style='background:#1a2840;color:#90a4ae;border:1px solid #2a3a50;margin-left:auto'>&#128260;</button>";
+  var status=loading
+    ?"<span style='color:#ffb74d'>&#9203; 取得中...</span>"
+    :hasData
+      ?"<span style='color:#00e676'>&#10003; 自動取得</span><span style='color:#4a6080'> | </span><span style='color:#4a6060'>"+upd+"</span>"
+      :"<span style='color:#ff5252'>&#9888; 取得失敗</span>";
+  var tabs=[
+    {id:"all",label:"全グラフ"},
+    {id:"c1",label:"&#9312;建玉残高"},
+    {id:"c2",label:"&#9313;取引量"},
+    {id:"c3",label:"&#9314;時系列"},
+    {id:"c4",label:"&#9315;先物建玉"},
+    {id:"c5",label:"&#128221;記録"}
+  ];
+  var tabH="";
+  for(var i=0;i<tabs.length;i++){
+    var t=tabs[i];var a=currentTab===t.id;
+    tabH+="<button onclick='setTab(""+t.id+"")' style='background:"+(a?"#00d4ff":"#1a2840")+";color:"+(a?"#0e1520":"#90a4ae")+";font-weight:"+(a?700:400)+"'>"+t.label+"</button>";
+  }
+  tabH+="<button onclick='location.reload(true)' style='background:#1a2840;color:#90a4ae;border:1px solid #2a3a50;margin-left:auto'>&#128260;</button>";
   var grid=currentTab==="all"?"display:grid;grid-template-columns:1fr 1fr;gap:12px":"";
-  var c1=safeCard(show("c1"),"#1565c0","① 建玉残高（行使価格別）",makeChart1);
-  var c2=safeCard(show("c2"),"#b71c1c","② 当日取引量（行使価格別）",makeChart2);
-  var c3=safeCard(show("c3"),"#1b5e20","③ 先物取引量 時系列",makeChart3);
-  var c4=safeCard(show("c4"),"#4a148c","④ 先物建玉推移（散布図）",makeChart4);
-  var c5="";if(currentTab==="c5"){try{c5="<div class='card'>"+makeChart5()+"</div>";}catch(e){c5="<div class='card'><div style='padding:12px;color:red'>Error:"+e.message+"</div></div>";}}
+  var c1=safeCard(show("c1"),"#1565c0","&#9312; 建玉残高（行使価格別）",makeChart1);
+  var c2=safeCard(show("c2"),"#b71c1c","&#9313; 当日取引量（行使価格別）",makeChart2);
+  var c3=safeCard(show("c3"),"#1b5e20","&#9314; 先物取引量 時系列",makeChart3);
+  var c4=safeCard(show("c4"),"#4a148c","&#9315; 先物建玉推移（散布図）",makeChart4);
+  var c5="";
+  if(currentTab==="c5"){
+    try{c5="<div class='card'>"+makeChart5()+"</div>";}
+    catch(e){c5="<div class='card'><div style='padding:12px;color:red;background:#fff'>Error:"+e.message+"</div></div>";}
+  }
   document.getElementById("root").innerHTML=
     "<div style='text-align:center;margin-bottom:12px'>"
     +"<div style='font-size:10px;letter-spacing:2px;color:#00d4ff;border:1px solid rgba(0,212,255,0.2);border-radius:20px;display:inline-block;padding:2px 14px;margin-bottom:6px'>GS DERIVATIVES DASHBOARD &middot; JPX自動取得</div>"
-    +"<h1 style='margin:0;font-size:16px;font-weight:700;background:linear-gradient(90deg,#00d4ff,#fff,#ff3d6b);-webkit-background-clip:text;-webkit-text-fill-color:transparent'>Goldman Sachs &#8212; 日経225 先物・オプション 建玉分析</h1>"
+    +"<h1 style='margin:0;font-size:16px;font-weight:700;color:#fff'>Goldman Sachs &#8212; 日経225 先物・オプション 建玉分析</h1>"
     +"<div style='margin-top:4px;font-size:10px;display:flex;justify-content:center;align-items:center;gap:8px'>"+status+"</div></div>"
     +"<div style='display:flex;gap:4px;margin-bottom:12px;flex-wrap:wrap;align-items:center'>"+tabH+"</div>"
     +"<div style='"+grid+"'>"+c1+c2+c3+c4+"</div>"+c5
-    +"<div style='text-align:center;color:#2a4060;font-size:9px;margin-top:12px'>※ JPX公開データに基づきます。投資判断の参考情報です。</div>";
+    +"<div style='text-align:center;color:#2a4060;font-size:9px;margin-top:12px'>&#10033; JPX公開データに基づきます。投資判断の参考情報です。</div>";
 }
 
 render(true,"");
 fetch(JSON_URL+"?t="+Date.now())
   .then(function(r){return r.json();})
   .then(function(j){liveData=j;render(false,j.updated||"");})
-  .catch(function(){render(false,"");});
+  .catch(function(e){console.log("fetch error",e);render(false,"");});
 </script>
 </body>
 </html>
