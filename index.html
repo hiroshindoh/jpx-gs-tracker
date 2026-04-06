@@ -425,15 +425,15 @@ function makeChart5(){
   out+="<div style='font-size:10px;color:#888;margin-bottom:8px'>参照: OI "+oiDate+" / 先物 "+futDate+"</div>";
   out+="<div style='font-size:11px;font-weight:600;margin-bottom:4px'>日経225</div>";
   out+="<div style='display:flex;gap:6px;margin-bottom:8px'>";
-  out+="<button id='nk-up' onclick='selDir("nk225","up")' style='flex:1;padding:6px;border-radius:6px;font-size:11px;border:2px solid #1976d2;background:#e3f2fd;color:#1976d2;opacity:0.4'>&#9650; 上昇</button>";
-  out+="<button id='nk-neu' onclick='selDir("nk225","neutral")' style='flex:1;padding:6px;border-radius:6px;font-size:11px;border:2px solid #ccc;background:#f5f5f5;color:#555;opacity:0.4'>&#8212; 中立</button>";
-  out+="<button id='nk-dn' onclick='selDir("nk225","down")' style='flex:1;padding:6px;border-radius:6px;font-size:11px;border:2px solid #d32f2f;background:#ffebee;color:#d32f2f'>&#9660; 下落</button>";
+  out+="<button id='nk-up' onclick='selDir(0,0)' style='flex:1;padding:6px;border-radius:6px;font-size:11px;border:2px solid #1976d2;background:#e3f2fd;color:#1976d2;opacity:0.4'>&#9650; 上昇</button>";
+  out+="<button id='nk-neu' onclick='selDir(0,1)' style='flex:1;padding:6px;border-radius:6px;font-size:11px;border:2px solid #ccc;background:#f5f5f5;color:#555;opacity:0.4'>&#8212; 中立</button>";
+  out+="<button id='nk-dn' onclick='selDir(0,2)' style='flex:1;padding:6px;border-radius:6px;font-size:11px;border:2px solid #d32f2f;background:#ffebee;color:#d32f2f'>&#9660; 下落</button>";
   out+="</div>";
   out+="<div style='font-size:11px;font-weight:600;margin-bottom:4px'>TOPIX</div>";
   out+="<div style='display:flex;gap:6px;margin-bottom:8px'>";
-  out+="<button id='tx-up' onclick='selDir("topix","up")' style='flex:1;padding:6px;border-radius:6px;font-size:11px;border:2px solid #1976d2;background:#e3f2fd;color:#1976d2'>&#9650; 上昇</button>";
-  out+="<button id='tx-neu' onclick='selDir("topix","neutral")' style='flex:1;padding:6px;border-radius:6px;font-size:11px;border:2px solid #ccc;background:#f5f5f5;color:#555;opacity:0.4'>&#8212; 中立</button>";
-  out+="<button id='tx-dn' onclick='selDir("topix","down")' style='flex:1;padding:6px;border-radius:6px;font-size:11px;border:2px solid #d32f2f;background:#ffebee;color:#d32f2f;opacity:0.4'>&#9660; 下落</button>";
+  out+="<button id='tx-up' onclick='selDir(1,0)' style='flex:1;padding:6px;border-radius:6px;font-size:11px;border:2px solid #1976d2;background:#e3f2fd;color:#1976d2'>&#9650; 上昇</button>";
+  out+="<button id='tx-neu' onclick='selDir(1,1)' style='flex:1;padding:6px;border-radius:6px;font-size:11px;border:2px solid #ccc;background:#f5f5f5;color:#555;opacity:0.4'>&#8212; 中立</button>";
+  out+="<button id='tx-dn' onclick='selDir(1,2)' style='flex:1;padding:6px;border-radius:6px;font-size:11px;border:2px solid #d32f2f;background:#ffebee;color:#d32f2f;opacity:0.4'>&#9660; 下落</button>";
   out+="</div>";
   out+="<div style='font-size:11px;font-weight:600;margin-bottom:4px'>根拠・メモ</div>";
   out+="<textarea id='pmemo' rows='3' style='width:100%;border:1px solid #ddd;border-radius:6px;padding:6px;font-size:11px;resize:none'>53,000円コール売・プット買→日経SQまで下落予測。TOPIX6月限買転換→上昇予測。</textarea>";
@@ -482,14 +482,17 @@ function makeChart5(){
   return out;
 }
 
-function selDir(target,dir){
+function selDir(tIdx,dIdx){
+  var targets=["nk225","topix"];
+  var dirNames=["up","neutral","down"];
+  var target=targets[tIdx];
+  var dir=dirNames[dIdx];
   predState[target]=dir;
-  var p=target==="nk225"?"nk":"tx";
+  var p=tIdx===0?"nk":"tx";
   var ids=["up","neu","dn"];
-  var dirs=["up","neutral","down"];
   for(var i=0;i<ids.length;i++){
     var el=document.getElementById(p+"-"+ids[i]);
-    if(el)el.style.opacity=dirs[i]===dir?"1":"0.4";
+    if(el)el.style.opacity=i===dIdx?"1":"0.4";
   }
 }
 
