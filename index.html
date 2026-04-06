@@ -364,6 +364,188 @@ function makeChart4(){
     +"</div>";
 }
 
+function makeChart5(){
+  // localStorageからデータ取得
+  function loadRecords(){
+    try{var d=localStorage.getItem("gs_predictions");return d?JSON.parse(d):[];}
+    catch(e){return[];}
+  }
+  function saveRecords(recs){
+    try{localStorage.setItem("gs_predictions",JSON.stringify(recs));}catch(e){}
+  }
+
+  var recs=loadRecords();
+  var oiDate=liveData&&liveData.oi?liveData.oi.date:"";
+  var futDate=liveData&&liveData.fut_oi_history?Object.keys(liveData.fut_oi_history).sort().pop():"";
+  var today=new Date().toISOString().slice(0,10);
+
+  // SQ日計算（月第2金曜）
+  function calcSQ(ym){
+    var d=new Date(ym+"-01");
+    var fri=0;
+    for(var i=1;i<=31;i++){
+      d.setDate(i);
+      if(d.getMonth()!==parseInt(ym.slice(5,7))-1)break;
+      if(d.getDay()===5)fri++;
+      if(fri===2)return d.toISOString().slice(0,10);
+    }
+    return "";
+  }
+  var defaultSQ=calcSQ("2026-04");
+
+  var html2="<div style='background:#fff;padding:12px'>";
+
+  // ── 新規予測フォーム ──
+  html2+="<div style='font-weight:700;font-size:13px;margin-bottom:10px;color:#1a237e'>📝 予測記録</div>";
+  html2+="<div style='background:#f5f5f5;border-radius:8px;padding:10px;margin-bottom:14px'>";
+  html2+="<div style='font-weight:700;font-size:11px;color:#555;margin-bottom:8px'>新規予測を作成</div>";
+
+  // 参照データ表示
+  html2+="<div style='font-size:10px;color:#888;margin-bottom:6px'>";
+  html2+="参照: OI "+oiDate+" / 先物 "+futDate+"</div>";
+
+  // 予測方向ボタン
+  html2+="<div style='font-size:11px;font-weight:600;margin-bottom:4px'>日経225の予測方向</div>";
+  html2+="<div style='display:flex;gap:6px;margin-bottom:8px'>";
+  html2+="<button onclick='selectDir("nk225","up")' id='nk-up' style='flex:1;padding:6px;background:#e3f2fd;color:#1976d2;border:2px solid #1976d2;border-radius:6px;font-size:11px'>&#9650; 上昇</button>";
+  html2+="<button onclick='selectDir("nk225","neutral")' id='nk-neu' style='flex:1;padding:6px;background:#f5f5f5;color:#555;border:2px solid #ccc;border-radius:6px;font-size:11px'>&#8212; 中立</button>";
+  html2+="<button onclick='selectDir("nk225","down")' id='nk-dn' style='flex:1;padding:6px;background:#ffebee;color:#d32f2f;border:2px solid #d32f2f;border-radius:6px;font-size:11px'>&#9660; 下落</button>";
+  html2+="</div>";
+
+  html2+="<div style='font-size:11px;font-weight:600;margin-bottom:4px'>TOPIXの予測方向</div>";
+  html2+="<div style='display:flex;gap:6px;margin-bottom:8px'>";
+  html2+="<button onclick='selectDir("topix","up")' id='tx-up' style='flex:1;padding:6px;background:#e3f2fd;color:#1976d2;border:2px solid #1976d2;border-radius:6px;font-size:11px'>&#9650; 上昇</button>";
+  html2+="<button onclick='selectDir("topix","neutral")' id='tx-neu' style='flex:1;padding:6px;background:#f5f5f5;color:#555;border:2px solid #ccc;border-radius:6px;font-size:11px'>&#8212; 中立</button>";
+  html2+="<button onclick='selectDir("topix","down")' id='tx-dn' style='flex:1;padding:6px;background:#ffebee;color:#d32f2f;border:2px solid #d32f2f;border-radius:6px;font-size:11px'>&#9660; 下落</button>";
+  html2+="</div>";
+
+  html2+="<div style='font-size:11px;font-weight:600;margin-bottom:4px'>根拠・メモ</div>";
+  html2+="<textarea id='pred-memo' rows='3' style='width:100%;border:1px solid #ddd;border-radius:6px;padding:6px;font-size:11px;resize:none' placeholder='例: 53000コール売＋プット買→日経↓予測。TOPIX6月買建転換→上昇予測。'>53,000円コール売・プット買→日経SQまで下落予測。TOPIX6月限買転換→上昇予測。日経とTOPIXが乖離する局面か。</textarea>";
+
+  html2+="<div style='font-size:11px;font-weight:600;margin-bottom:4px;margin-top:8px'>SQ日</div>";
+  html2+="<input id='pred-sq' type='date' value='"+defaultSQ+"' style='border:1px solid #ddd;border-radius:6px;padding:6px;font-size:11px;width:100%'>";
+
+  html2+="<button onclick='savePrediction()' style='width:100%;margin-top:10px;padding:8px;background:#1976d2;color:#fff;border-radius:6px;font-size:12px;font-weight:700'>予測を保存</button>";
+  html2+="</div>";
+
+  // ── 記録一覧 ──
+  if(recs.length===0){
+    html2+="<div style='color:#aaa;font-size:11px;text-align:center;padding:16px'>まだ記録がありません</div>";
+  } else {
+    recs.slice().reverse().forEach(function(r,idx){
+      var realIdx=recs.length-1-idx;
+      var isVerified=r.verified;
+      var borderColor=isVerified?(r.nk225_correct&&r.topix_correct?"#4caf50":r.nk225_correct||r.topix_correct?"#ff9800":"#f44336"):"#e0e0e0";
+      var bgColor=isVerified?(r.nk225_correct&&r.topix_correct?"#e8f5e9":r.nk225_correct||r.topix_correct?"#fff8e1":"#ffebee"):"#fafafa";
+
+      html2+="<div style='border:2px solid "+borderColor+";border-radius:8px;padding:10px;margin-bottom:10px;background:"+bgColor+"'>";
+      html2+="<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:6px'>";
+      html2+="<div style='font-size:10px;color:#888'>"+r.created+" | OI:"+r.oi_date+" 先物:"+r.fut_date+"</div>";
+      html2+=(isVerified?"<span style='font-size:10px;font-weight:700;color:"+borderColor+"'>"+(r.nk225_correct&&r.topix_correct?"✅完全的中":r.nk225_correct||r.topix_correct?"⚡部分的中":"❌外れ")+"</span>"
+        :"<span style='font-size:10px;color:#aaa'>未検証</span>");
+      html2+="</div>";
+
+      // 予測方向
+      var dirIcon={"up":"&#9650;上昇","down":"&#9660;下落","neutral":"&#8212;中立"};
+      html2+="<div style='display:flex;gap:8px;margin-bottom:6px;font-size:11px'>";
+      html2+="<span style='color:#1976d2'><b>日経:</b> "+dirIcon[r.nk225_dir]+"</span>";
+      html2+="<span style='color:#d32f2f'><b>TOPIX:</b> "+dirIcon[r.topix_dir]+"</span>";
+      html2+="<span style='color:#888'>SQ:"+r.sq_date+"</span>";
+      html2+="</div>";
+      html2+="<div style='font-size:10px;color:#555;margin-bottom:8px'>"+r.memo+"</div>";
+
+      if(!isVerified){
+        // 検証入力
+        html2+="<div style='font-size:10px;font-weight:600;color:#555;margin-bottom:4px'>SQ結果を入力して検証</div>";
+        html2+="<div style='display:flex;gap:6px;margin-bottom:4px'>";
+        html2+="<div style='flex:1;font-size:10px'>日経: <select id='vr-nk-"+realIdx+"' style='font-size:10px;border:1px solid #ddd;border-radius:4px'><option value='up'>上昇</option><option value='down'>下落</option><option value='neutral'>中立</option></select></div>";
+        html2+="<div style='flex:1;font-size:10px'>TOPIX: <select id='vr-tx-"+realIdx+"' style='font-size:10px;border:1px solid #ddd;border-radius:4px'><option value='up'>上昇</option><option value='down'>下落</option><option value='neutral'>中立</option></select></div>";
+        html2+="</div>";
+        html2+="<button onclick='verifyRecord("+realIdx+")' style='width:100%;padding:5px;background:#388e3c;color:#fff;border-radius:6px;font-size:11px;font-weight:600'>検証を確定</button>";
+      } else {
+        html2+="<div style='font-size:10px;color:#555'>実績: 日経 "+dirIcon[r.nk225_actual]+" / TOPIX "+dirIcon[r.topix_actual]+"</div>";
+      }
+
+      html2+="<button onclick='deleteRecord("+realIdx+")' style='margin-top:4px;font-size:9px;color:#aaa;background:none;border:none;text-decoration:underline'>削除</button>";
+      html2+="</div>";
+    });
+  }
+
+  html2+="</div>";
+  return html2;
+}
+
+// 予測方向の状態
+var predState={nk225:"down",topix:"up"};
+
+function selectDir(target,dir){
+  predState[target]=dir;
+  // ボタンの見た目更新（再render不要）
+  var prefix=target==="nk225"?"nk":"tx";
+  ["up","neu","dn"].forEach(function(d){
+    var el=document.getElementById(prefix+"-"+d);
+    if(!el)return;
+    var isActive=(d==="up"&&dir==="up")||(d==="neu"&&dir==="neutral")||(d==="dn"&&dir==="down");
+    el.style.opacity=isActive?"1":"0.35";
+    el.style.fontWeight=isActive?"700":"400";
+  });
+}
+
+function savePrediction(){
+  var memo=document.getElementById("pred-memo");
+  var sq=document.getElementById("pred-sq");
+  if(!memo||!sq)return;
+  var oiDate=liveData&&liveData.oi?liveData.oi.date:"";
+  var futDate=liveData&&liveData.fut_oi_history?Object.keys(liveData.fut_oi_history).sort().pop():"";
+  var rec={
+    created:new Date().toISOString().slice(0,10),
+    oi_date:oiDate,
+    fut_date:futDate,
+    nk225_dir:predState.nk225,
+    topix_dir:predState.topix,
+    memo:memo.value,
+    sq_date:sq.value,
+    verified:false
+  };
+  var recs=loadRecordsGlobal();
+  recs.push(rec);
+  saveRecordsGlobal(recs);
+  setTab("c5");
+}
+
+function verifyRecord(idx){
+  var nkEl=document.getElementById("vr-nk-"+idx);
+  var txEl=document.getElementById("vr-tx-"+idx);
+  if(!nkEl||!txEl)return;
+  var recs=loadRecordsGlobal();
+  if(!recs[idx])return;
+  var nkActual=nkEl.value;
+  var txActual=txEl.value;
+  recs[idx].nk225_actual=nkActual;
+  recs[idx].topix_actual=txActual;
+  recs[idx].nk225_correct=(recs[idx].nk225_dir===nkActual);
+  recs[idx].topix_correct=(recs[idx].topix_dir===txActual);
+  recs[idx].verified=true;
+  recs[idx].verified_date=new Date().toISOString().slice(0,10);
+  saveRecordsGlobal(recs);
+  setTab("c5");
+}
+
+function deleteRecord(idx){
+  if(!confirm("この記録を削除しますか？"))return;
+  var recs=loadRecordsGlobal();
+  recs.splice(idx,1);
+  saveRecordsGlobal(recs);
+  setTab("c5");
+}
+
+function loadRecordsGlobal(){
+  try{var d=localStorage.getItem("gs_predictions");return d?JSON.parse(d):[];}catch(e){return[];}
+}
+function saveRecordsGlobal(recs){
+  try{localStorage.setItem("gs_predictions",JSON.stringify(recs));}catch(e){alert("保存失敗: "+e.message);}
+}
+
 function setTab(id){currentTab=id;render();}
 function show(id){return currentTab==="all"||currentTab===id;}
 
@@ -375,7 +557,7 @@ function render(){
     :hasData?"<span style='color:#00e676'>&#10003; 自動取得データ</span><span style='color:#4a6080'> | </span><span style='color:#4a6060'>更新:"+upd+"</span>"
     :"<span style='color:#ff5252'>&#9888; 取得失敗</span>";
 
-  var tabs=[{id:"all",label:"全グラフ"},{id:"c1",label:"①建玉残高"},{id:"c2",label:"②取引量"},{id:"c3",label:"③時系列"},{id:"c4",label:"④先物建玉"}];
+  var tabs=[{id:"all",label:"全グラフ"},{id:"c1",label:"①建玉残高"},{id:"c2",label:"②取引量"},{id:"c3",label:"③時系列"},{id:"c4",label:"④先物建玉"},{id:"c5",label:"📝記録"}];
   var tabHTML=tabs.map(function(t){
     var active=currentTab===t.id;
     return "<button onclick='setTab(\""+t.id+"\")' style='background:"+(active?"#00d4ff":"#1a2840")+";color:"+(active?"#0e1520":"#90a4ae")+";font-weight:"+(active?700:400)+"'>"+t.label+"</button>";
@@ -394,6 +576,8 @@ function render(){
   var c2=safeCard(show("c2"),"#b71c1c","② 当日取引量（行使価格別）",makeChart2);
   var c3=safeCard(show("c3"),"#1b5e20","③ 先物取引量 時系列",makeChart3);
   var c4=safeCard(show("c4"),"#4a148c","④ 先物建玉推移（散布図）",makeChart4);
+  var c5="";
+  if(show("c5")){try{c5=makeChart5();}catch(e){c5="<div style='padding:12px;color:red'>エラー: "+e.message+"</div>";}}
 
   document.getElementById("root").innerHTML=
     "<div style='text-align:center;margin-bottom:12px'>"
@@ -401,7 +585,7 @@ function render(){
     +"<h1 style='margin:0;font-size:16px;font-weight:700;background:linear-gradient(90deg,#00d4ff,#fff,#ff3d6b);-webkit-background-clip:text;-webkit-text-fill-color:transparent'>Goldman Sachs &#8212; 日経225 先物・オプション 建玉分析</h1>"
     +"<div style='margin-top:4px;font-size:10px;display:flex;justify-content:center;align-items:center;gap:8px'>"+statusHTML+"</div></div>"
     +"<div style='display:flex;gap:4px;margin-bottom:12px;flex-wrap:wrap;align-items:center'>"+tabHTML+"</div>"
-    +"<div style='"+grid+"'>"+c1+c2+c3+c4+"</div>"
+    +"<div style='"+grid+"'>"+c1+c2+c3+c4+"</div>"+c5
     +"<div style='text-align:center;color:#2a4060;font-size:9px;margin-top:12px'>※ JPX公開データに基づきます。投資判断の参考情報です。</div>";
 }
 
