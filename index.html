@@ -351,121 +351,110 @@ function makeChart3(){
 }
 
 function makeChart4(){
-  const futHist = ld?.fut_oi_history || {
+  const futHist = liveData?.fut_oi_history || {
     "2026-03-27": {NK225_2606:-13190,NK225_2609:27,MINI_2604:10000,MINI_2605:0,MINI_2606:0,TOPIX_2606:-30704,TOPIX_2609:-600},
     "2026-04-03": {NK225_2606:-6893,NK225_2609:27,MINI_2604:9000,MINI_2605:0,MINI_2606:0,TOPIX_2606:11258,TOPIX_2609:-600}
   };
 
   const dates = Object.keys(futHist).sort();
-  if(!dates.length) return `<div style="padding:24px;color:#888;text-align:center">データなし</div>`;
+  if(!dates.length) return "<div style='padding:24px;color:#888;text-align:center'>データなし</div>";
 
-  // 3シリーズ定義
-  // 期近: NK225大2606 vs TOPIX2606
-  // 期先: NK225大2609 vs TOPIX2609
-  // Mini換算: (MINI_2604+MINI_2605)/10 vs 0（TOPIX miniなし）
   const SERIES = [
-    { id:"near", label:"期近(2606)", color:"#1976d2",
-      getX: d => d.NK225_2606 || 0,
-      getY: d => d.TOPIX_2606 || 0 },
-    { id:"far",  label:"期先(2609)", color:"#d32f2f",
-      getX: d => d.NK225_2609 || 0,
-      getY: d => d.TOPIX_2609 || 0 },
-    { id:"mini", label:"mini換算(÷10)", color:"#388e3c",
-      getX: d => ((d.MINI_2604||0)+(d.MINI_2605||0)+(d.MINI_2606||0))/10,
-      getY: d => 0 },
+    {id:"near",label:"期近(2606)",color:"#1976d2",
+     getX:function(d){return d.NK225_2606||0;},
+     getY:function(d){return d.TOPIX_2606||0;}},
+    {id:"far",label:"期先(2609)",color:"#d32f2f",
+     getX:function(d){return d.NK225_2609||0;},
+     getY:function(d){return d.TOPIX_2609||0;}},
+    {id:"mini",label:"mini換算(÷10)",color:"#388e3c",
+     getX:function(d){return ((d.MINI_2604||0)+(d.MINI_2605||0)+(d.MINI_2606||0))/10;},
+     getY:function(d){return 0;}}
   ];
 
-  // 全データ点を集めてスケール計算
-  const allX=[], allY=[];
-  dates.forEach(dt=>{
-    const d=futHist[dt];
-    SERIES.forEach(s=>{ allX.push(s.getX(d)); allY.push(s.getY(d)); });
+  var allX=[0], allY=[0];
+  dates.forEach(function(dt){
+    var d=futHist[dt];
+    SERIES.forEach(function(s){allX.push(s.getX(d));allY.push(s.getY(d));});
   });
-  allX.push(0); allY.push(0);
-  const xMin=Math.min(...allX), xMax=Math.max(...allX);
-  const yMin=Math.min(...allY), yMax=Math.max(...allY);
-  const xPad=(xMax-xMin)*0.15||5000, yPad=(yMax-yMin)*0.15||5000;
-  const X0=xMin-xPad, X1=xMax+xPad, Y0=yMin-yPad, Y1=yMax+yPad;
 
-  const W=300, H=240;
-  const PL=55, PR=15, PT=20, PB=38;
-  const CW=W-PL-PR, CH=H-PT-PB;
+  var xMin=Math.min.apply(null,allX), xMax=Math.max.apply(null,allX);
+  var yMin=Math.min.apply(null,allY), yMax=Math.max.apply(null,allY);
+  var xPad=Math.max((xMax-xMin)*0.2,3000);
+  var yPad=Math.max((yMax-yMin)*0.2,3000);
+  var X0=xMin-xPad, X1=xMax+xPad, Y0=yMin-yPad, Y1=yMax+yPad;
 
-  function px(x){ return PL + (x-X0)/(X1-X0)*CW; }
-  function py(y){ return PT + CH - (y-Y0)/(Y1-Y0)*CH; }
+  var W=300, H=240, PL=52, PR=12, PT=18, PB=36;
+  var CW=W-PL-PR, CH=H-PT-PB;
 
-  // 0軸の位置
-  const zx=px(0), zy=py(0);
+  function px(x){return PL+(x-X0)/(X1-X0)*CW;}
+  function py(y){return PT+CH-(y-Y0)/(Y1-Y0)*CH;}
 
-  // グリッド・軸ラベル生成
-  function niceStep(range){ const t=Math.pow(10,Math.floor(Math.log10(range/4))); const m=[1,2,5]; let best=t; m.forEach(f=>{if(Math.abs(range/(t*f)-4)<Math.abs(range/best-4))best=t*f;}); return best; }
-  const xStep=niceStep(X1-X0), yStep=niceStep(Y1-Y0);
+  var zx=Math.round(px(0)), zy=Math.round(py(0));
 
-  let gridLines="";
-  for(let v=Math.ceil(X0/xStep)*xStep; v<=X1; v+=xStep){
-    const x=px(v);
-    gridLines+=`<line x1="${x}" y1="${PT}" x2="${x}" y2="${PT+CH}" stroke="#eee" stroke-width="1"/>`;
-    gridLines+=`<text x="${x}" y="${PT+CH+12}" text-anchor="middle" font-size="7" fill="#999">${(v/1000).toFixed(0)}k</text>`;
+  // グリッドライン（固定ステップ）
+  function makeGridStep(range){
+    var steps=[500,1000,2000,5000,10000,20000,50000];
+    for(var i=0;i<steps.length;i++){if(range/steps[i]<8)return steps[i];}
+    return 50000;
   }
-  for(let v=Math.ceil(Y0/yStep)*yStep; v<=Y1; v+=yStep){
-    const y=py(v);
-    gridLines+=`<line x1="${PL}" y1="${y}" x2="${PL+CW}" y2="${y}" stroke="#eee" stroke-width="1"/>`;
-    gridLines+=`<text x="${PL-4}" y="${y+3}" text-anchor="end" font-size="7" fill="#999">${(v/1000).toFixed(0)}k</text>`;
+  var xStep=makeGridStep(X1-X0), yStep=makeGridStep(Y1-Y0);
+
+  var gridLines="";
+  var v, x, y;
+  for(v=Math.ceil(X0/xStep)*xStep; v<=X1; v+=xStep){
+    x=Math.round(px(v));
+    gridLines+="<line x1='"+x+"' y1='"+PT+"' x2='"+x+"' y2='"+(PT+CH)+"' stroke='#eee' stroke-width='1'/>";
+    gridLines+="<text x='"+x+"' y='"+(PT+CH+11)+"' text-anchor='middle' font-size='7' fill='#999'>"+(v/1000).toFixed(0)+"k</text>";
+  }
+  for(v=Math.ceil(Y0/yStep)*yStep; v<=Y1; v+=yStep){
+    y=Math.round(py(v));
+    gridLines+="<line x1='"+PL+"' y1='"+y+"' x2='"+(PL+CW)+"' y2='"+y+"' stroke='#eee' stroke-width='1'/>";
+    gridLines+="<text x='"+(PL-4)+"' y='"+(y+3)+"' text-anchor='end' font-size='7' fill='#999'>"+(v/1000).toFixed(0)+"k</text>";
   }
 
-  // 各シリーズ描画
-  let seriesSVG="";
-  SERIES.forEach(s=>{
-    const points = dates.map(dt=>({
-      x: px(s.getX(futHist[dt])),
-      y: py(s.getY(futHist[dt])),
-      date: dt
-    }));
+  var seriesSVG="";
+  SERIES.forEach(function(s){
+    var points=dates.map(function(dt){
+      return {x:Math.round(px(s.getX(futHist[dt]))*10)/10, y:Math.round(py(s.getY(futHist[dt]))*10)/10, date:dt};
+    });
     // 折れ線
     if(points.length>1){
-      const pathD = points.map((p,i)=>(i===0?`M${p.x},${p.y}`:`L${p.x},${p.y}`)).join(" ");
-      seriesSVG+=`<path d="${pathD}" fill="none" stroke="${s.color}" stroke-width="1.5" opacity="0.7"/>`;
+      var pathD=points.map(function(p,i){return (i===0?"M":"L")+p.x+","+p.y;}).join(" ");
+      seriesSVG+="<path d='"+pathD+"' fill='none' stroke='"+s.color+"' stroke-width='2' opacity='0.6'/>";
     }
-    // 過去点：小さい×マーク
-    points.slice(0,-1).forEach(p=>{
-      seriesSVG+=`<circle cx="${p.x}" cy="${p.y}" r="2.5" fill="none" stroke="${s.color}" stroke-width="1.2"/>`;
+    // 過去点（空円）
+    points.slice(0,-1).forEach(function(p){
+      seriesSVG+="<circle cx='"+p.x+"' cy='"+p.y+"' r='4' fill='white' stroke='"+s.color+"' stroke-width='1.5'/>";
     });
-    // 最新点：実線の小円
-    const lp=points[points.length-1];
-    seriesSVG+=`<circle cx="${lp.x}" cy="${lp.y}" r="5" fill="${s.color}" fill-opacity="0.85" stroke="${s.color}" stroke-width="1.5"/>`;
-    // 最新値ラベル
-    seriesSVG+=`<text x="${lp.x+7}" y="${lp.y+3}" font-size="7" fill="${s.color}" font-weight="700">${s.label}</text>`;
+    // 最新点（実円）
+    var lp=points[points.length-1];
+    seriesSVG+="<circle cx='"+lp.x+"' cy='"+lp.y+"' r='6' fill='"+s.color+"' fill-opacity='0.9' stroke='white' stroke-width='1'/>";
+    seriesSVG+="<text x='"+(lp.x+8)+"' y='"+(lp.y+4)+"' font-size='8' fill='"+s.color+"' font-weight='700'>"+s.label+"</text>";
   });
 
-  // 凡例
-  const legendItems = SERIES.map((s,i)=>`
-    <g transform="translate(${i*95},0)">
-      <line x1="0" y1="6" x2="14" y2="6" stroke="${s.color}" stroke-width="1.5"/>
-      <circle cx="7" cy="6" r="3" fill="${s.color}"/>
-      <text x="17" y="10" font-size="8" fill="#555">${s.label}</text>
-    </g>`).join("");
+  // 凡例HTML
+  var legendHTML=SERIES.map(function(s){
+    return "<span style='margin-right:10px;font-size:9px;color:"+s.color+"'>● "+s.label+"</span>";
+  }).join("");
 
-  return `<div style="background:#fff;padding:10px 6px">
-    <div style="font-weight:700;font-size:11px;text-align:center;margin-bottom:2px">Goldman Sachs — 先物建玉推移</div>
-    <div style="font-size:9px;text-align:center;color:#888;margin-bottom:4px">${dates[0].slice(5)} 〜 ${dates[dates.length-1].slice(5)}（${dates.length}週分）</div>
-    <svg width="100%" viewBox="0 0 ${W} ${H}" style="overflow:visible">
-      <!-- グリッド -->
-      ${gridLines}
-      <!-- 0軸 -->
-      <line x1="${PL}" y1="${zy}" x2="${PL+CW}" y2="${zy}" stroke="#333" stroke-width="1.5"/>
-      <line x1="${zx}" y1="${PT}" x2="${zx}" y2="${PT+CH}" stroke="#333" stroke-width="1.5"/>
-      <!-- 軸ラベル -->
-      <text x="${PL+CW/2}" y="${H-2}" text-anchor="middle" font-size="8" fill="#555">Sell ←— NK225 —→ Buy</text>
-      <text x="10" y="${PT+CH/2}" text-anchor="middle" font-size="8" fill="#555" transform="rotate(-90,10,${PT+CH/2})">Sell ←— TOPIX —→ Buy</text>
-      <!-- シリーズ -->
-      ${seriesSVG}
-    </svg>
-    <!-- 凡例 -->
-    <svg width="100%" height="18" viewBox="0 0 285 18">
-      ${legendItems}
-    </svg>
-    <div style="font-size:8px;color:#aaa;text-align:center;margin-top:2px">● 最新  ○ 過去  ｜mini = large÷10換算</div>
-  </div>`;
+  // 日付ラベル（X軸下）
+  var dateLabel=dates.length>1 ? dates[0].slice(5)+" 〜 "+dates[dates.length-1].slice(5) : dates[0].slice(5);
+
+  return "<div style='background:#fff;padding:10px 6px'>"
+    +"<div style='font-weight:700;font-size:11px;text-align:center;margin-bottom:2px'>Goldman Sachs — 先物建玉推移</div>"
+    +"<div style='font-size:9px;text-align:center;color:#888;margin-bottom:4px'>"+dateLabel+"（"+dates.length+"週分）</div>"
+    +"<svg width='100%' viewBox='0 0 "+W+" "+H+"' style='overflow:visible'>"
+    +gridLines
+    +"<line x1='"+PL+"' y1='"+zy+"' x2='"+(PL+CW)+"' y2='"+zy+"' stroke='#333' stroke-width='1.5'/>"
+    +"<line x1='"+zx+"' y1='"+PT+"' x2='"+zx+"' y2='"+(PT+CH)+"' stroke='#333' stroke-width='1.5'/>"
+    +"<text x='"+(PL+CW/2)+"' y='"+(H-2)+"' text-anchor='middle' font-size='8' fill='#555'>Sell &lt;-- NK225 --&gt; Buy</text>"
+    +"<text x='10' y='"+(PT+CH/2)+"' text-anchor='middle' font-size='8' fill='#555' transform='rotate(-90,10,"+(PT+CH/2)+")'>"
+    +"Sell &lt;-- TOPIX --&gt; Buy</text>"
+    +seriesSVG
+    +"</svg>"
+    +"<div style='padding:4px 0;font-size:9px'>"+legendHTML+"</div>"
+    +"<div style='font-size:8px;color:#aaa;text-align:center'>● 最新  ○ 過去  ｜mini=large÷10換算</div>"
+    +"</div>";
 }
 
 
