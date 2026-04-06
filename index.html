@@ -422,202 +422,354 @@ function buildChart4HTML() {
     + "<div style='font-size:8px;color:#aaa;text-align:center'>&#9679; 最新 &#9675; 過去 mini=large&#247;10</div></div>";
 }
 
-// ── グラフ⑤ DOM生成 ──
+// ── グラフ⑤ 予測記録 ──
 function buildChart5() {
   var recs = loadRecs();
+
+  // 自動入力データを収集
+  var today = new Date().toISOString().slice(0,10);
   var oiDate = (liveData && liveData.oi) ? liveData.oi.date : "";
+  var dataPeriod = oiDate.length >= 10 ? (oiDate.slice(5,7).replace(/^0/,"") + "/" + oiDate.slice(8,10).replace(/^0/,"") + "週") : "";
+
   var fh = (liveData && liveData.fut_oi_history) ? liveData.fut_oi_history : {};
   var fDates = Object.keys(fh).sort();
-  var futDate = fDates.length ? fDates[fDates.length-1] : "";
-  var DI = {up:"&#9650;上昇", down:"&#9660;下落", neutral:"&#8212;中立"};
+  var latestFut = fDates.length ? fh[fDates[fDates.length-1]] : {};
+  var prevFut   = fDates.length > 1 ? fh[fDates[fDates.length-2]] : {};
+  var nk226  = latestFut.NK225_2606 || 0;
+  var nkPrev = prevFut.NK225_2606   || 0;
+  var nkDiff = nk226 - nkPrev;
+  var tx606  = latestFut.TOPIX_2606 || 0;
+  var txPrev = prevFut.TOPIX_2606   || 0;
+  var txDiff = tx606 - txPrev;
+
+  var gs = (liveData && liveData.oi && liveData.oi.gs) ? liveData.oi.gs : [];
+  var callEntries = [], putEntries = [];
+  for (var i = 0; i < gs.length; i++) {
+    if (gs[i].type === "CALL") callEntries.push(gs[i]);
+    if (gs[i].type === "PUT")  putEntries.push(gs[i]);
+  }
+  function fmtEntries(arr) {
+    if (!arr.length) return "—";
+    return arr.map(function(e){ return e.qty + "枚（" + (e.side==="Buy"?"買":"売") + " " + e.strike.toLocaleString() + "円）"; }).join("、");
+  }
+  var callStr = fmtEntries(callEntries);
+  var putStr  = fmtEntries(putEntries);
+
+  function diffSpan(v) {
+    if (v === 0) return "";
+    var color = v > 0 ? "#388e3c" : "#d32f2f";
+    var mark  = v > 0 ? "▲" : "▼";
+    return " <span style='font-size:10px;color:" + color + "'>" + mark + Math.abs(v).toLocaleString() + "</span>";
+  }
 
   var wrap = document.createElement("div");
   wrap.style.cssText = "background:#fff;padding:12px";
 
-  // タイトル
-  var title = document.createElement("div");
-  title.style.cssText = "font-weight:700;font-size:13px;margin-bottom:10px;color:#1a237e";
-  title.innerHTML = "&#128221; 予測記録";
-  wrap.appendChild(title);
-
-  // フォーム
+  // ─── 新規フォーム ───
   var form = document.createElement("div");
-  form.style.cssText = "background:#f5f5f5;border-radius:8px;padding:10px;margin-bottom:14px";
-  form.innerHTML = "<div style='font-weight:700;font-size:11px;color:#555;margin-bottom:6px'>新規予測を作成</div>"
-    + "<div style='font-size:10px;color:#888;margin-bottom:8px'>参照: OI " + oiDate + " / 先物 " + futDate + "</div>";
+  form.style.cssText = "background:var(--color-background-secondary,#f5f5f5);border-radius:8px;padding:10px;margin-bottom:16px";
 
-  function makeDirBtns(target, state) {
-    var row = document.createElement("div");
-    row.style.cssText = "display:flex;gap:6px;margin-bottom:8px";
-    var dirs = ["up","neutral","down"];
-    var labels = ["&#9650; 上昇","&#8212; 中立","&#9660; 下落"];
-    var colors = ["#1976d2","#555","#d32f2f"];
-    var bgs = ["#e3f2fd","#f5f5f5","#ffebee"];
-    var borders = ["#1976d2","#ccc","#d32f2f"];
-    var btns = [];
-    for (var i = 0; i < 3; i++) {
-      (function(dir, idx) {
-        var btn = document.createElement("button");
-        btn.style.cssText = "flex:1;padding:6px;border-radius:6px;font-size:11px;border:2px solid " + borders[idx] + ";background:" + bgs[idx] + ";color:" + colors[idx] + ";opacity:" + (state === dir ? "1" : "0.4");
-        btn.innerHTML = labels[idx];
-        btn.addEventListener("click", function() {
-          if (target === "nk") predNK = dir; else predTX = dir;
-          for (var j = 0; j < btns.length; j++) btns[j].style.opacity = j === idx ? "1" : "0.4";
-        });
-        btns.push(btn);
-        row.appendChild(btn);
-      })(dirs[i], i);
-    }
-    return row;
+  var formTitle = document.createElement("div");
+  formTitle.style.cssText = "font-size:13px;font-weight:500;color:#555;margin-bottom:10px";
+  formTitle.textContent = "新規予測を作成";
+  form.appendChild(formTitle);
+
+  // 自動入力グリッド
+  var autoGrid = document.createElement("div");
+  autoGrid.style.cssText = "display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px";
+  function autoCell(label, html2) {
+    var c = document.createElement("div");
+    c.style.cssText = "background:#fff;border-radius:6px;padding:7px 9px";
+    c.innerHTML = "<div style='font-size:10px;color:#888;margin-bottom:2px'>" + label + "</div>"
+      + "<div style='font-size:12px;font-weight:500;color:#333'>" + html2 + "</div>";
+    return c;
   }
+  autoGrid.appendChild(autoCell("予想日", today));
+  autoGrid.appendChild(autoCell("データ期間", dataPeriod || "—"));
+  autoGrid.appendChild(autoCell("日経先物（前週比）", nk226.toLocaleString() + diffSpan(nkDiff)));
+  autoGrid.appendChild(autoCell("TOPIX先物（前週比）", tx606.toLocaleString() + diffSpan(txDiff)));
+  autoGrid.appendChild(autoCell("コール建玉", callStr));
+  autoGrid.appendChild(autoCell("プット建玉", putStr));
+  form.appendChild(autoGrid);
 
-  var nkLabel = document.createElement("div");
-  nkLabel.style.cssText = "font-size:11px;font-weight:600;margin-bottom:4px";
-  nkLabel.textContent = "日経225";
-  form.appendChild(nkLabel);
-  form.appendChild(makeDirBtns("nk", predNK));
+  // 日経終値
+  var closeLabel = document.createElement("div");
+  closeLabel.style.cssText = "font-size:11px;color:#888;margin-bottom:4px";
+  closeLabel.textContent = "日経終値（手動入力）";
+  form.appendChild(closeLabel);
+  var closeInput = document.createElement("input");
+  closeInput.type = "number"; closeInput.placeholder = "例: 35000";
+  closeInput.style.cssText = "width:100%;font-size:13px;padding:6px 8px;border-radius:6px;border:0.5px solid #ddd;margin-bottom:10px;background:#fff;color:#333";
+  form.appendChild(closeInput);
 
-  var txLabel = document.createElement("div");
-  txLabel.style.cssText = "font-size:11px;font-weight:600;margin-bottom:4px";
-  txLabel.textContent = "TOPIX";
-  form.appendChild(txLabel);
-  form.appendChild(makeDirBtns("tx", predTX));
-
-  var memoLabel = document.createElement("div");
-  memoLabel.style.cssText = "font-size:11px;font-weight:600;margin-bottom:4px";
-  memoLabel.textContent = "根拠・メモ";
-  form.appendChild(memoLabel);
-
-  var memo = document.createElement("textarea");
-  memo.id = "pmemo5";
-  memo.rows = 3;
-  memo.style.cssText = "width:100%;border:1px solid #ddd;border-radius:6px;padding:6px;font-size:11px;resize:none";
-  memo.value = "53,000円コール売・プット買→日経SQまで下落予測。TOPIX6月限買転換→上昇予測。";
-  form.appendChild(memo);
-
+  // SQ予想
   var sqLabel = document.createElement("div");
-  sqLabel.style.cssText = "font-size:11px;font-weight:600;margin:6px 0 4px";
-  sqLabel.textContent = "SQ日";
+  sqLabel.style.cssText = "font-size:11px;color:#888;margin-bottom:4px";
+  sqLabel.textContent = "日経SQ予想";
   form.appendChild(sqLabel);
+  var sqRow = document.createElement("div");
+  sqRow.style.cssText = "display:flex;gap:8px;margin-bottom:10px";
+  var newSQDir = "up";
+  function makeSQBtn(dir, label) {
+    var btn = document.createElement("button");
+    btn.style.cssText = "flex:1;padding:7px;border-radius:6px;font-size:12px;font-weight:500;border:1.5px solid " + (dir==="up"?"#1976d2":"#d32f2f") + ";background:" + (dir==="up"?"#e3f2fd":"#ffebee") + ";color:" + (dir==="up"?"#1565c0":"#c62828") + ";opacity:" + (newSQDir===dir?"1":"0.4");
+    btn.innerHTML = dir==="up" ? "▲ 上昇" : "▼ 下落";
+    btn.addEventListener("click", function() {
+      newSQDir = dir;
+      sqRow.querySelectorAll("button").forEach(function(b,i) { b.style.opacity = (i===0 ? dir==="up" : dir==="down") ? "1" : "0.4"; });
+    });
+    return btn;
+  }
+  sqRow.appendChild(makeSQBtn("up","▲ 上昇"));
+  sqRow.appendChild(makeSQBtn("down","▼ 下落"));
+  form.appendChild(sqRow);
 
-  var sqInput = document.createElement("input");
-  sqInput.type = "date"; sqInput.id = "psq5"; sqInput.value = "2026-04-10";
-  sqInput.style.cssText = "border:1px solid #ddd;border-radius:6px;padding:6px;font-size:11px;width:100%";
-  form.appendChild(sqInput);
+  // メモ
+  var memoLabel = document.createElement("div");
+  memoLabel.style.cssText = "font-size:11px;color:#888;margin-bottom:4px";
+  memoLabel.textContent = "メモ";
+  form.appendChild(memoLabel);
+  var memoTA = document.createElement("textarea");
+  memoTA.rows = 4;
+  memoTA.style.cssText = "width:100%;font-size:12px;padding:6px 8px;border-radius:6px;border:0.5px solid #ddd;background:#fff;color:#333;resize:none;margin-bottom:10px";
+  form.appendChild(memoTA);
 
+  // 保存ボタン
   var saveBtn = document.createElement("button");
-  saveBtn.style.cssText = "width:100%;margin-top:10px;padding:8px;background:#1976d2;color:#fff;border-radius:6px;font-size:12px;font-weight:700";
-  saveBtn.textContent = "予測を保存";
+  saveBtn.style.cssText = "width:100%;padding:8px;background:#1565c0;color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:500";
+  saveBtn.textContent = "保存";
   saveBtn.addEventListener("click", function() {
-    var m = document.getElementById("pmemo5");
-    var sq = document.getElementById("psq5");
-    if (!m || !sq) return;
-    var rec = {created:new Date().toISOString().slice(0,10), oi_date:oiDate, fut_date:futDate,
-      nk225_dir:predNK, topix_dir:predTX, memo:m.value, sq_date:sq.value, verified:false};
-    var rs = loadRecs(); rs.push(rec); saveRecs(rs);
-    setTab("c5");
+    var nextId = recs.length > 0 ? Math.max.apply(null, recs.map(function(r){return r.id||0;})) + 1 : 1;
+    var rec = {
+      id: nextId, created: today, dataPeriod: dataPeriod,
+      nk226: nk226, nkDiff: nkDiff, tx606: tx606, txDiff: txDiff,
+      callStr: callStr, putStr: putStr,
+      closePrice: closeInput.value || "",
+      sqDir: newSQDir, memo: memoTA.value,
+      verified: false, sqResult: ""
+    };
+    var rs = loadRecs(); rs.push(rec); saveRecs(rs); setTab("c5");
   });
   form.appendChild(saveBtn);
   wrap.appendChild(form);
 
-  // 記録一覧
+  // ─── 記録一覧 ───
+  var listTitle = document.createElement("div");
+  listTitle.style.cssText = "font-size:13px;font-weight:500;color:#555;margin-bottom:8px";
+  listTitle.textContent = "記録一覧";
+  wrap.appendChild(listTitle);
+
   if (!recs.length) {
     var empty = document.createElement("div");
-    empty.style.cssText = "color:#aaa;font-size:11px;text-align:center;padding:16px";
+    empty.style.cssText = "color:#aaa;font-size:11px;text-align:center;padding:20px";
     empty.textContent = "まだ記録がありません";
     wrap.appendChild(empty);
-  } else {
-    for (var ri = recs.length-1; ri >= 0; ri--) {
-      (function(r, idx) {
-        var verified = r.verified;
-        var bc = verified ? (r.nk225_correct&&r.topix_correct?"#4caf50":r.nk225_correct||r.topix_correct?"#ff9800":"#f44336") : "#e0e0e0";
-        var bg2 = verified ? (r.nk225_correct&&r.topix_correct?"#e8f5e9":r.nk225_correct||r.topix_correct?"#fff8e1":"#ffebee") : "#fafafa";
+  }
 
-        var card = document.createElement("div");
-        card.style.cssText = "border:2px solid " + bc + ";border-radius:8px;padding:10px;margin-bottom:10px;background:" + bg2;
+  for (var ri = recs.length - 1; ri >= 0; ri--) {
+    (function(r, idx) {
+      var verified = r.verified && r.sqResult;
+      var correct  = verified && r.sqDir === r.sqResult;
+      var borderColor = verified ? (correct ? "#4caf50" : "#f44336") : "#e0e0e0";
+      var bgColor     = verified ? (correct ? "#e8f5e9" : "#ffebee") : "#fafafa";
 
+      var card = document.createElement("div");
+      card.style.cssText = "border:1.5px solid " + borderColor + ";border-radius:8px;padding:10px;margin-bottom:10px;background:" + bgColor;
+
+      // ── 表示モード ──
+      function renderView() {
+        card.innerHTML = "";
+
+        // ヘッダー行
         var topRow = document.createElement("div");
-        topRow.style.cssText = "display:flex;justify-content:space-between;align-items:center;margin-bottom:6px";
-        var dateSpan = document.createElement("span");
-        dateSpan.style.cssText = "font-size:10px;color:#888";
-        dateSpan.textContent = r.created;
-        topRow.appendChild(dateSpan);
-        var statusSpan = document.createElement("span");
-        statusSpan.style.cssText = "font-size:10px;font-weight:700;color:" + bc;
-        if (verified) statusSpan.innerHTML = r.nk225_correct&&r.topix_correct?"&#10003;完全的中":r.nk225_correct||r.topix_correct?"&#9889;部分的中":"&#10007;外れ";
-        else statusSpan.style.color="#aaa", statusSpan.textContent="未検証";
-        topRow.appendChild(statusSpan);
+        topRow.style.cssText = "display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:4px";
+        var leftBadges = document.createElement("div");
+        leftBadges.style.cssText = "display:flex;align-items:center;gap:6px;flex-wrap:wrap";
+        leftBadges.innerHTML =
+          "<span style='font-size:11px;background:#eee;border-radius:4px;padding:2px 7px;color:#555;font-weight:500'>#" + String(r.id).padStart(3,"0") + "</span>"
+          + "<span style='font-size:11px;color:#888'>" + r.created + "</span>"
+          + "<span style='font-size:11px;background:" + (r.sqDir==="up"?"#e3f2fd":"#ffebee") + ";color:" + (r.sqDir==="up"?"#1565c0":"#c62828") + ";border-radius:4px;padding:2px 7px;font-weight:500'>" + (r.sqDir==="up"?"▲ 上昇予測":"▼ 下落予測") + "</span>";
+        topRow.appendChild(leftBadges);
+        var statusBadge = document.createElement("span");
+        if (verified) {
+          statusBadge.style.cssText = "font-size:11px;font-weight:500;color:" + (correct?"#2e7d32":"#c62828") + ";background:" + (correct?"#e8f5e9":"#ffebee") + ";padding:2px 7px;border-radius:4px";
+          statusBadge.textContent = correct ? "✓ 的中" : "✗ 外れ";
+        } else {
+          statusBadge.style.cssText = "font-size:11px;color:#aaa;background:#eee;padding:2px 7px;border-radius:4px";
+          statusBadge.textContent = "未検証";
+        }
+        topRow.appendChild(statusBadge);
         card.appendChild(topRow);
 
-        var meta = document.createElement("div");
-        meta.style.cssText = "font-size:10px;color:#888;margin-bottom:4px";
-        meta.textContent = "OI:" + r.oi_date + " / 先物:" + r.fut_date + " / SQ:" + r.sq_date;
-        card.appendChild(meta);
+        // データグリッド
+        var grid = document.createElement("div");
+        grid.style.cssText = "display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px;margin-bottom:8px";
+        function cell(lbl, val) {
+          return "<div><div style='font-size:10px;color:#888'>" + lbl + "</div><div style='font-size:11px;font-weight:500;color:#333'>" + val + "</div></div>";
+        }
+        grid.innerHTML =
+          cell("データ期間", r.dataPeriod || "—")
+          + cell("日経先物（前週比）", r.nk226.toLocaleString() + diffSpan(r.nkDiff))
+          + cell("TOPIX先物（前週比）", r.tx606.toLocaleString() + diffSpan(r.txDiff))
+          + cell("コール建玉", r.callStr)
+          + cell("プット建玉", r.putStr)
+          + cell("日経終値", r.closePrice ? Number(r.closePrice).toLocaleString() : "—");
+        card.appendChild(grid);
 
-        var dirs = document.createElement("div");
-        dirs.style.cssText = "display:flex;gap:10px;margin-bottom:6px;font-size:11px";
-        dirs.innerHTML = "<span style='color:#1565c0'><b>日経:</b> " + DI[r.nk225_dir] + "</span>"
-          + "<span style='color:#b71c1c'><b>TOPIX:</b> " + DI[r.topix_dir] + "</span>";
-        card.appendChild(dirs);
+        // メモ
+        var memoBox = document.createElement("div");
+        memoBox.style.cssText = "font-size:11px;color:#555;background:#f5f5f5;border-radius:6px;padding:7px 9px;margin-bottom:8px;line-height:1.6;white-space:pre-wrap";
+        memoBox.textContent = r.memo || "";
+        card.appendChild(memoBox);
 
-        var memoDiv = document.createElement("div");
-        memoDiv.style.cssText = "font-size:10px;color:#555;margin-bottom:8px";
-        memoDiv.textContent = r.memo;
-        card.appendChild(memoDiv);
-
-        if (!verified) {
-          var verLabel = document.createElement("div");
-          verLabel.style.cssText = "font-size:10px;font-weight:600;color:#555;margin-bottom:4px";
-          verLabel.textContent = "SQ結果を入力して検証";
-          card.appendChild(verLabel);
-
-          var selRow = document.createElement("div");
-          selRow.style.cssText = "display:flex;gap:8px;margin-bottom:6px";
-
-          var nkSel = document.createElement("select");
-          nkSel.style.cssText = "font-size:10px;border:1px solid #ddd;border-radius:4px;flex:1";
-          nkSel.innerHTML = "<option value='up'>日経:上昇</option><option value='down'>日経:下落</option><option value='neutral'>日経:中立</option>";
-          selRow.appendChild(nkSel);
-
-          var txSel = document.createElement("select");
-          txSel.style.cssText = "font-size:10px;border:1px solid #ddd;border-radius:4px;flex:1";
-          txSel.innerHTML = "<option value='up'>TOPIX:上昇</option><option value='down'>TOPIX:下落</option><option value='neutral'>TOPIX:中立</option>";
-          selRow.appendChild(txSel);
-          card.appendChild(selRow);
-
-          var verBtn = document.createElement("button");
-          verBtn.style.cssText = "width:100%;padding:5px;background:#388e3c;color:#fff;border-radius:6px;font-size:11px;font-weight:600";
-          verBtn.textContent = "検証を確定";
-          verBtn.addEventListener("click", function() {
-            var rs = loadRecs();
-            if (!rs[idx]) return;
-            rs[idx].nk225_actual = nkSel.value;
-            rs[idx].topix_actual = txSel.value;
-            rs[idx].nk225_correct = rs[idx].nk225_dir === nkSel.value;
-            rs[idx].topix_correct = rs[idx].topix_dir === txSel.value;
-            rs[idx].verified = true;
-            rs[idx].verified_date = new Date().toISOString().slice(0,10);
-            saveRecs(rs); setTab("c5");
-          });
-          card.appendChild(verBtn);
-        } else {
-          var actual = document.createElement("div");
-          actual.style.cssText = "font-size:10px;color:#555";
-          actual.innerHTML = "実績: 日経 " + DI[r.nk225_actual] + " / TOPIX " + DI[r.topix_actual];
-          card.appendChild(actual);
+        // 検証済みなら結果表示
+        if (verified) {
+          var resDiv = document.createElement("div");
+          resDiv.style.cssText = "font-size:11px;color:#555;margin-bottom:8px";
+          resDiv.textContent = "SQ実績: " + (r.sqResult==="up"?"▲ 上昇":"▼ 下落") + " / " + (r.verified_date||"");
+          card.appendChild(resDiv);
         }
 
+        // ボタン行
+        var btnRow = document.createElement("div");
+        btnRow.style.cssText = "display:flex;gap:6px";
+
+        var editBtn = document.createElement("button");
+        editBtn.style.cssText = "flex:1;padding:6px;font-size:11px;border-radius:6px;background:#f5f5f5;color:#333;border:0.5px solid #ddd";
+        editBtn.textContent = "編集";
+        editBtn.addEventListener("click", renderEdit);
+        btnRow.appendChild(editBtn);
+
         var delBtn = document.createElement("button");
-        delBtn.style.cssText = "margin-top:4px;font-size:9px;color:#bbb;background:none;border:none;text-decoration:underline";
+        delBtn.style.cssText = "padding:6px 12px;font-size:11px;border-radius:6px;background:#f5f5f5;color:#d32f2f;border:0.5px solid #ddd";
         delBtn.textContent = "削除";
         delBtn.addEventListener("click", function() {
           var rs = loadRecs(); rs.splice(idx,1); saveRecs(rs); setTab("c5");
         });
-        card.appendChild(delBtn);
-        wrap.appendChild(card);
-      })(recs[ri], ri);
-    }
+        btnRow.appendChild(delBtn);
+        card.appendChild(btnRow);
+      }
+
+      // ── 編集モード ──
+      function renderEdit() {
+        card.innerHTML = "";
+        card.style.background = "#fff";
+        card.style.borderColor = "#1976d2";
+
+        var editLabel = document.createElement("div");
+        editLabel.style.cssText = "font-size:11px;font-weight:500;color:#1565c0;margin-bottom:8px";
+        editLabel.textContent = "#" + String(r.id).padStart(3,"0") + " を編集中";
+        card.appendChild(editLabel);
+
+        // 終値
+        var clLabel = document.createElement("div");
+        clLabel.style.cssText = "font-size:11px;color:#888;margin-bottom:3px";
+        clLabel.textContent = "日経終値";
+        card.appendChild(clLabel);
+        var clInput = document.createElement("input");
+        clInput.type = "number"; clInput.value = r.closePrice || "";
+        clInput.style.cssText = "width:100%;font-size:13px;padding:6px 8px;border-radius:6px;border:0.5px solid #ddd;margin-bottom:8px;background:#fff;color:#333";
+        card.appendChild(clInput);
+
+        // SQ予想
+        var sqL = document.createElement("div");
+        sqL.style.cssText = "font-size:11px;color:#888;margin-bottom:4px";
+        sqL.textContent = "日経SQ予想";
+        card.appendChild(sqL);
+        var sqR = document.createElement("div");
+        sqR.style.cssText = "display:flex;gap:8px;margin-bottom:8px";
+        var editDir = r.sqDir;
+        var sqBtns = [];
+        ["up","down"].forEach(function(dir) {
+          var btn = document.createElement("button");
+          btn.style.cssText = "flex:1;padding:7px;border-radius:6px;font-size:12px;font-weight:500;border:1.5px solid " + (dir==="up"?"#1976d2":"#d32f2f") + ";background:" + (dir==="up"?"#e3f2fd":"#ffebee") + ";color:" + (dir==="up"?"#1565c0":"#c62828") + ";opacity:" + (editDir===dir?"1":"0.4");
+          btn.textContent = dir==="up" ? "▲ 上昇" : "▼ 下落";
+          btn.addEventListener("click", function() {
+            editDir = dir;
+            sqBtns.forEach(function(b,i){ b.style.opacity = (i===0?dir==="up":dir==="down") ? "1":"0.4"; });
+          });
+          sqBtns.push(btn); sqR.appendChild(btn);
+        });
+        card.appendChild(sqR);
+
+        // SQ実績（検証）
+        var resL = document.createElement("div");
+        resL.style.cssText = "font-size:11px;color:#888;margin-bottom:4px";
+        resL.textContent = "SQ実績（確定後に入力）";
+        card.appendChild(resL);
+        var resR = document.createElement("div");
+        resR.style.cssText = "display:flex;gap:8px;margin-bottom:8px";
+        var resultDir = r.sqResult || "";
+        var resBtns = [];
+        ["up","down",""].forEach(function(dir) {
+          var btn = document.createElement("button");
+          var lbl = dir==="up"?"▲ 上昇":dir==="down"?"▼ 下落":"未確定";
+          btn.style.cssText = "flex:1;padding:5px;border-radius:6px;font-size:11px;border:0.5px solid #ddd;background:#f5f5f5;color:#555;opacity:" + (resultDir===dir?"1":"0.4");
+          btn.textContent = lbl;
+          btn.addEventListener("click", function() {
+            resultDir = dir;
+            resBtns.forEach(function(b,i){ b.style.opacity = (["up","down",""][i]===dir)?"1":"0.4"; });
+          });
+          resBtns.push(btn); resR.appendChild(btn);
+        });
+        card.appendChild(resR);
+
+        // メモ
+        var mL = document.createElement("div");
+        mL.style.cssText = "font-size:11px;color:#888;margin-bottom:3px";
+        mL.textContent = "メモ";
+        card.appendChild(mL);
+        var mTA = document.createElement("textarea");
+        mTA.rows = 4; mTA.value = r.memo || "";
+        mTA.style.cssText = "width:100%;font-size:12px;padding:6px 8px;border-radius:6px;border:0.5px solid #ddd;background:#fff;color:#333;resize:none;margin-bottom:8px";
+        card.appendChild(mTA);
+
+        // 保存/キャンセル
+        var btnRow = document.createElement("div");
+        btnRow.style.cssText = "display:flex;gap:6px";
+
+        var updBtn = document.createElement("button");
+        updBtn.style.cssText = "flex:1;padding:7px;font-size:12px;border-radius:6px;background:#1565c0;color:#fff;border:none;font-weight:500";
+        updBtn.textContent = "更新";
+        updBtn.addEventListener("click", function() {
+          var rs = loadRecs();
+          if (!rs[idx]) return;
+          rs[idx].closePrice = clInput.value;
+          rs[idx].sqDir = editDir;
+          rs[idx].memo = mTA.value;
+          if (resultDir) {
+            rs[idx].sqResult = resultDir;
+            rs[idx].verified = true;
+            rs[idx].verified_date = new Date().toISOString().slice(0,10);
+          } else {
+            rs[idx].sqResult = "";
+            rs[idx].verified = false;
+          }
+          saveRecs(rs);
+          r = rs[idx];
+          card.style.borderColor = borderColor;
+          card.style.background = bgColor;
+          renderView();
+        });
+        btnRow.appendChild(updBtn);
+
+        var cancelBtn = document.createElement("button");
+        cancelBtn.style.cssText = "padding:7px 14px;font-size:12px;border-radius:6px;background:#f5f5f5;color:#555;border:0.5px solid #ddd";
+        cancelBtn.textContent = "キャンセル";
+        cancelBtn.addEventListener("click", function() {
+          card.style.borderColor = borderColor;
+          card.style.background = bgColor;
+          renderView();
+        });
+        btnRow.appendChild(cancelBtn);
+        card.appendChild(btnRow);
+      }
+
+      renderView();
+      wrap.appendChild(card);
+    })(recs[ri], ri);
   }
+
   return wrap;
 }
 
