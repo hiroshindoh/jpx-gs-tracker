@@ -35,6 +35,7 @@ var BUY="#1976d2",SELL="#d32f2f";
 var ATM_LINE=54000;
 var liveData=null,currentTab="all";
 var predState={nk225:"down",topix:"up"};
+var c1tips={};
 
 var FALLBACK_OI={date:"2026-03-13",gs:[
   {strike:54000,type:"CALL",side:"Buy",qty:150},
@@ -49,6 +50,11 @@ function showTip(s,bl,bv,sl,sv){
   t.style.display="block";
 }
 function hideTip(){document.getElementById("tip").style.display="none";}
+function doC1Tip(s,side){
+  var d=c1tips[s]||{cb:0,cs:0,pb:0,ps:0};
+  if(side===0)showTip(s,"Buy",d.cb,"Sell",d.cs);
+  else showTip(s,"Buy",d.pb,"Sell",d.ps);
+}
 
 function loadRecs(){
   try{var d=localStorage.getItem("gs_predictions");return d?JSON.parse(d):[];}
@@ -169,6 +175,7 @@ function makeChart1(){
       if(o.putSell>0)oP+="<div style='position:absolute;left:"+Math.min(o.putBuy/MAX*100,100)+"%;top:1px;height:"+BH+"px;width:"+Math.min(o.putSell/MAX*100,100)+"%;background:rgba(211,47,47,0.25)'></div>";
     }
     var c2=curSnap.map[d.strike]||{callBuy:0,callSell:0,putBuy:0,putSell:0};
+    c1tips[d.strike]={cb:c2.callBuy,cs:c2.callSell,pb:c2.putBuy,ps:c2.putSell};
     var cBw=Math.min(c2.callBuy/MAX*100,100),cSw=Math.min(c2.callSell/MAX*100,100);
     var pBw=Math.min(c2.putBuy/MAX*100,100),pSw=Math.min(c2.putSell/MAX*100,100);
     var cB=c2.callBuy>0?"<div style='position:absolute;right:0;top:1px;height:"+BH+"px;width:"+cBw+"%;background:"+BUY+"'></div>":"";
@@ -178,11 +185,11 @@ function makeChart1(){
     rows+="<div style='position:relative'>"+lbl
       +"<div style='display:grid;grid-template-columns:1fr 68px 1fr;height:"+RH+"px'>"
       +"<div style='background:"+bg+";position:relative;overflow:hidden;border-right:1px solid #ccc'"
-      +" onmouseenter="showTip("+d.strike+",'Buy',"+c2.callBuy+",'Sell',"+c2.callSell+")">"
+      +" onmouseenter='doC1Tip("+d.strike+",0)'>"
       +oC+cB+cS+"</div>"
       +"<div style='height:"+RH+"px;display:flex;align-items:center;justify-content:center;font-size:7px;font-weight:"+(isAtm?700:400)+";color:#555;background:"+bg+"'>"+d.strike.toLocaleString()+"</div>"
       +"<div style='background:"+bg+";position:relative;overflow:hidden;border-left:1px solid #ccc'"
-      +" onmouseenter="showTip("+d.strike+",'Buy',"+c2.putBuy+",'Sell',"+c2.putSell+")">"
+      +" onmouseenter='doC1Tip("+d.strike+",1)'>"
       +oP+pB+pS+"</div>"
       +"</div></div>";
   }
