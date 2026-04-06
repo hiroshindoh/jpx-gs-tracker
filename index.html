@@ -530,6 +530,7 @@ function delRec(idx){
 }
 
 function setTab(id){currentTab=id;render();}
+function setTabN(i){setTab(["all","c1","c2","c3","c4","c5"][i]);}
 function show(id){
   if(id==="c5")return currentTab==="c5";
   return currentTab==="all"||currentTab===id;
@@ -550,18 +551,13 @@ function render(){
     :hasData
       ?"<span style='color:#00e676'>&#10003; 自動取得</span><span style='color:#4a6080'> | </span><span style='color:#4a6060'>"+upd+"</span>"
       :"<span style='color:#ff5252'>&#9888; 取得失敗</span>";
-  var tabs=[
-    {id:"all",label:"全グラフ"},
-    {id:"c1",label:"&#9312;建玉残高"},
-    {id:"c2",label:"&#9313;取引量"},
-    {id:"c3",label:"&#9314;時系列"},
-    {id:"c4",label:"&#9315;先物建玉"},
-    {id:"c5",label:"&#128221;記録"}
-  ];
+  var TIDS=["all","c1","c2","c3","c4","c5"];
+  var TLBS=["\u5168\u30b0\u30e9\u30d5","&#9312;\u5efa\u7389\u6b8b\u9ad8","&#9313;\u53d6\u5f15\u91cf","&#9314;\u6642\u7cfb\u5217","&#9315;\u5148\u7269\u5efa\u7389","&#128221;\u8a18\u9332"];
   var tabH="";
-  for(var i=0;i<tabs.length;i++){
-    var t=tabs[i];var a=currentTab===t.id;
-    tabH+="<button onclick='setTab(""+t.id+"")' style='background:"+(a?"#00d4ff":"#1a2840")+";color:"+(a?"#0e1520":"#90a4ae")+";font-weight:"+(a?700:400)+"'>"+t.label+"</button>";
+  for(var i=0;i<TIDS.length;i++){
+    var a=currentTab===TIDS[i];
+    tabH+='<button onclick="setTabN('+i+')" style="background:'+(a?'#00d4ff':'#1a2840')+';color:'+(a?'#0e1520':'#90a4ae')+';font-weight:'+(a?700:400)+'">'+ TLBS[i]+'</button>';
+  }
   }
   tabH+="<button onclick='location.reload(true)' style='background:#1a2840;color:#90a4ae;border:1px solid #2a3a50;margin-left:auto'>&#128260;</button>";
   var grid=currentTab==="all"?"display:grid;grid-template-columns:1fr 1fr;gap:12px":"";
