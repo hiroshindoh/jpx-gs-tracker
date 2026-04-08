@@ -715,12 +715,14 @@ function buildChart5() {
 
         function row2(l1,el1,l2,el2) {
           var d = document.createElement("div");
-          d.style.cssText = "display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px";
+          d.style.cssText = "margin-bottom:8px";
           function wrap2(lbl2, el) {
             var w = document.createElement("div");
+            w.style.cssText = "margin-bottom:8px";
             var lb = document.createElement("div");
             lb.style.cssText = "font-size:11px;color:#888;margin-bottom:3px";
             lb.textContent = lbl2;
+            el.style.width = "100%";
             w.appendChild(lb); w.appendChild(el);
             return w;
           }
