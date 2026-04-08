@@ -274,14 +274,23 @@ function buildChart2HTML() {
       vd.sort(function(a,b){return a.strike-b.strike;});
     }
   }
-  if (!vd) { vd = []; for (var s = 51000; s <= 56000; s += 125) vd.push({strike:s, callVol:0, putVol: s===51000?25:0}); }
+  // Chart1と同じ全ストライク範囲（51,000〜57,000）に統一
+  var allStrikes2 = [];
+  for (var s = 51000; s <= 57000; s += 125) allStrikes2.push(s);
+  if (!vd) {
+    vd = allStrikes2.map(function(s){ return {strike:s, callVol:0, putVol:0}; });
+  } else {
+    var vdMap = {};
+    for (var i = 0; i < vd.length; i++) vdMap[vd[i].strike] = vd[i];
+    vd = allStrikes2.map(function(s){ return vdMap[s] || {strike:s, callVol:0, putVol:0}; });
+  }
   var pt = 0, ct = 0;
   for (var i = 0; i < vd.length; i++) { pt += vd[i].putVol; ct += vd[i].callVol; }
   var pcr = ct === 0 ? "100.00" : (pt/(ct+pt)*100).toFixed(2);
   var MAX = 0;
   for (var i = 0; i < vd.length; i++) MAX = Math.max(MAX, vd[i].callVol, vd[i].putVol);
   MAX = Math.max(MAX, 10);
-  var RH = 13, vdate = (liveData && liveData.vol && liveData.vol.date) ? liveData.vol.date : "";
+  var RH = 11, vdate = (liveData && liveData.vol && liveData.vol.date) ? liveData.vol.date : "";
   var rows = "";
   for (var i = vd.length-1; i >= 0; i--) {
     var d = vd[i], hc = d.callVol > 0, hp = d.putVol > 0, act = hc || hp;
