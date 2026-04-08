@@ -702,7 +702,7 @@ function buildChart5() {
         btnRow.appendChild(editBtn);
         var exitBtn = document.createElement("button");
         exitBtn.style.cssText = "flex:1;padding:6px;font-size:11px;border-radius:6px;background:#e8f5e9;color:#2e7d32;border:0.5px solid #a5d6a7;font-weight:500";
-        exitBtn.textContent = "💰 利益確定を追加";
+        exitBtn.textContent = "💰 利益確定を編集/追加";
         exitBtn.addEventListener("click", function() { renderExitForm(); });
         btnRow.appendChild(exitBtn);
         var delBtn = document.createElement("button");
@@ -715,124 +715,155 @@ function buildChart5() {
         card.appendChild(btnRow);
       }
 
-      // ── 利益確定フォーム ──
+      // ── 利益確定 編集/追加フォーム ──
       function renderExitForm() {
         card.innerHTML = "";
-        var lbl = document.createElement("div");
-        lbl.style.cssText = "font-size:12px;font-weight:500;color:#2e7d32;margin-bottom:10px";
-        lbl.textContent = "💰 利益確定を記録";
-        card.appendChild(lbl);
+        var exits = r.exits || [];
 
-        function row2(l1,el1,l2,el2) {
-          var d = document.createElement("div");
-          d.style.cssText = "margin-bottom:8px";
-          function wrap2(lbl2, el) {
-            var w = document.createElement("div");
-            w.style.cssText = "margin-bottom:8px";
-            var lb = document.createElement("div");
-            lb.style.cssText = "font-size:11px;color:#888;margin-bottom:3px";
-            lb.textContent = lbl2;
-            el.style.width = "100%";
-            w.appendChild(lb); w.appendChild(el);
-            return w;
-          }
-          d.appendChild(wrap2(l1,el1)); d.appendChild(wrap2(l2,el2));
-          return d;
+        var hdr = document.createElement("div");
+        hdr.style.cssText = "font-size:12px;font-weight:500;color:#2e7d32;margin-bottom:12px";
+        hdr.textContent = "💰 利益確定を編集/追加";
+        card.appendChild(hdr);
+
+        function makeLbl(txt) {
+          var l = document.createElement("div");
+          l.style.cssText = "font-size:11px;color:#888;margin-bottom:3px";
+          l.textContent = txt; return l;
         }
-        function labelWrap(lbl2, el) {
-          var w = document.createElement("div");
-          w.style.cssText = "margin-bottom:8px";
-          var lb = document.createElement("div");
-          lb.style.cssText = "font-size:11px;color:#888;margin-bottom:3px";
-          lb.textContent = lbl2;
-          w.appendChild(lb); w.appendChild(el);
-          return w;
+        function makeInput(type, val, ph) {
+          var el = document.createElement("input");
+          el.type = type; el.value = val||""; if(ph) el.placeholder = ph;
+          el.style.cssText = "width:100%;font-size:12px;padding:6px 8px;border-radius:6px;border:0.5px solid #ddd;background:#fff;color:#333;margin-bottom:8px";
+          return el;
         }
-
-        // いつ
-        var dateInput = document.createElement("input");
-        dateInput.type = "date"; dateInput.value = new Date().toISOString().slice(0,10);
-        dateInput.style.cssText = "width:100%;font-size:13px;padding:6px 8px;border-radius:6px;border:0.5px solid #ddd;background:#fff;color:#333";
-
-        // どの価格
-        var priceInput = document.createElement("input");
-        priceInput.type = "number"; priceInput.placeholder = "例: 36000";
-        priceInput.style.cssText = "width:100%;font-size:13px;padding:6px 8px;border-radius:6px;border:0.5px solid #ddd;background:#fff;color:#333";
-
-        card.appendChild(row2("いつ", dateInput, "どの価格で（円）", priceInput));
-
-        // どうなって
-        var dirLabel = document.createElement("div");
-        dirLabel.style.cssText = "font-size:11px;color:#888;margin-bottom:4px";
-        dirLabel.textContent = "どうなって";
-        card.appendChild(dirLabel);
-        var dirRow = document.createElement("div");
-        dirRow.style.cssText = "display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap";
-        var selectedDir = "大幅上昇";
-        var dirBtns = [];
-        EXIT_DIRS.forEach(function(d, di) {
-          var btn = document.createElement("button");
-          btn.style.cssText = "flex:1;padding:6px;border-radius:6px;font-size:11px;border:1.5px solid " + EXIT_COLORS[di] + ";background:" + (di<=1?"#e3f2fd":"#ffebee") + ";color:" + EXIT_COLORS[di] + ";opacity:" + (d===selectedDir?"1":"0.4");
-          btn.textContent = d;
-          btn.addEventListener("click", function() {
-            selectedDir = d;
-            dirBtns.forEach(function(b,j){ b.style.opacity = EXIT_DIRS[j]===d?"1":"0.4"; });
+        function makeTA(val, ph) {
+          var el = document.createElement("textarea");
+          el.rows = 2; el.value = val||""; if(ph) el.placeholder = ph;
+          el.style.cssText = "width:100%;font-size:12px;padding:6px 8px;border-radius:6px;border:0.5px solid #ddd;background:#fff;color:#333;resize:none;margin-bottom:8px";
+          return el;
+        }
+        function makeDirBtns(selected) {
+          var wrap = document.createElement("div");
+          wrap.style.cssText = "display:flex;gap:5px;margin-bottom:8px;flex-wrap:wrap";
+          var btns = [];
+          var sel = selected || "大幅上昇";
+          EXIT_DIRS.forEach(function(d,di) {
+            var btn = document.createElement("button");
+            btn.style.cssText = "flex:1;padding:5px;border-radius:6px;font-size:11px;border:1.5px solid "+EXIT_COLORS[di]+";background:"+(di<=1?"#e3f2fd":"#ffebee")+";color:"+EXIT_COLORS[di]+";opacity:"+(d===sel?"1":"0.4");
+            btn.textContent = d;
+            btn.addEventListener("click", function() {
+              sel = d; btns.forEach(function(b,j){ b.style.opacity=EXIT_DIRS[j]===d?"1":"0.4"; });
+              wrap._selected = d;
+            });
+            btns.push(btn); wrap.appendChild(btn);
           });
-          dirBtns.push(btn); dirRow.appendChild(btn);
+          wrap._selected = sel;
+          return wrap;
+        }
+
+        // ── 既存の利益確定記録を編集可能に表示 ──
+        var exitForms = [];
+        if (exits.length === 0) {
+          var noExit = document.createElement("div");
+          noExit.style.cssText = "font-size:11px;color:#aaa;text-align:center;padding:8px 0 12px";
+          noExit.textContent = "まだ利益確定記録はありません";
+          card.appendChild(noExit);
+        }
+        exits.forEach(function(ex, ei) {
+          var exWrap = document.createElement("div");
+          exWrap.style.cssText = "border:0.5px solid #a5d6a7;border-radius:8px;padding:9px;margin-bottom:10px;background:#f9fbe7";
+
+          var exHdr = document.createElement("div");
+          exHdr.style.cssText = "display:flex;justify-content:space-between;align-items:center;margin-bottom:6px";
+          var exNum = document.createElement("span");
+          exNum.style.cssText = "font-size:11px;font-weight:500;color:#388e3c";
+          exNum.textContent = "記録 " + (ei+1);
+          exHdr.appendChild(exNum);
+          var delExBtn = document.createElement("button");
+          delExBtn.style.cssText = "font-size:10px;padding:2px 8px;border-radius:4px;background:#fff;color:#d32f2f;border:0.5px solid #d32f2f";
+          delExBtn.textContent = "削除";
+          (function(eidx) {
+            delExBtn.addEventListener("click", function() {
+              var rs = loadRecs();
+              if (!rs[idx] || !rs[idx].exits) return;
+              rs[idx].exits.splice(eidx, 1);
+              saveRecs(rs); r = rs[idx]; renderExitForm();
+            });
+          })(ei);
+          exHdr.appendChild(delExBtn);
+          exWrap.appendChild(exHdr);
+
+          var dateIn = makeInput("date", ex.date);
+          exWrap.appendChild(makeLbl("いつ")); exWrap.appendChild(dateIn);
+          var priceIn = makeInput("number", ex.price, "例: 36000");
+          exWrap.appendChild(makeLbl("どの価格で（円）")); exWrap.appendChild(priceIn);
+          var dirW = makeDirBtns(ex.direction);
+          exWrap.appendChild(makeLbl("どうなって")); exWrap.appendChild(dirW);
+          var reasonIn = makeTA(ex.reason, "例: 暴落が急速に回復したため");
+          exWrap.appendChild(makeLbl("なぜ")); exWrap.appendChild(reasonIn);
+          var profitIn = makeInput("number", ex.profit, "例: 50");
+          exWrap.appendChild(makeLbl("いくら儲けたか（万円）")); exWrap.appendChild(profitIn);
+
+          exitForms.push({dateIn:dateIn,priceIn:priceIn,dirW:dirW,reasonIn:reasonIn,profitIn:profitIn});
+          card.appendChild(exWrap);
         });
-        card.appendChild(dirRow);
 
-        // なぜ
-        var reasonTA = document.createElement("textarea");
-        reasonTA.rows = 2;
-        reasonTA.placeholder = "例: 暴落が急速に回復したため";
-        reasonTA.style.cssText = "width:100%;font-size:12px;padding:6px 8px;border-radius:6px;border:0.5px solid #ddd;background:#fff;color:#333;resize:none";
-        card.appendChild(labelWrap("なぜ", reasonTA));
+        // ── 新規追加フォーム ──
+        var addHdr = document.createElement("div");
+        addHdr.style.cssText = "font-size:11px;font-weight:500;color:#555;margin-bottom:8px;border-top:0.5px solid #ddd;padding-top:10px";
+        addHdr.textContent = "+ 新規追加";
+        card.appendChild(addHdr);
 
-        // いくら儲けたか
-        var profitInput = document.createElement("input");
-        profitInput.type = "number"; profitInput.placeholder = "例: 50";
-        profitInput.style.cssText = "width:100%;font-size:13px;padding:6px 8px;border-radius:6px;border:0.5px solid #ddd;background:#fff;color:#333";
-        var profitWrap = document.createElement("div");
-        profitWrap.style.cssText = "margin-bottom:10px;display:flex;align-items:center;gap:6px";
-        var profitLabel = document.createElement("div");
-        profitLabel.style.cssText = "font-size:11px;color:#888;white-space:nowrap";
-        profitLabel.textContent = "利益（万円）";
-        var profitUnit = document.createElement("span");
-        profitUnit.style.cssText = "font-size:12px;color:#555;white-space:nowrap";
-        profitUnit.textContent = "万円";
-        var profitInner = document.createElement("div");
-        profitInner.style.cssText = "margin-bottom:10px";
-        profitInner.appendChild(labelWrap("いくら儲けたか（万円）", profitInput));
-        card.appendChild(profitInner);
+        var newDate = makeInput("date", new Date().toISOString().slice(0,10));
+        card.appendChild(makeLbl("いつ")); card.appendChild(newDate);
+        var newPrice = makeInput("number", "", "例: 36000");
+        card.appendChild(makeLbl("どの価格で（円）")); card.appendChild(newPrice);
+        var newDir = makeDirBtns("大幅上昇");
+        card.appendChild(makeLbl("どうなって")); card.appendChild(newDir);
+        var newReason = makeTA("", "例: 暴落が急速に回復したため");
+        card.appendChild(makeLbl("なぜ")); card.appendChild(newReason);
+        var newProfit = makeInput("number", "", "例: 50");
+        card.appendChild(makeLbl("いくら儲けたか（万円）")); card.appendChild(newProfit);
 
-        // ボタン
+        // ── ボタン行 ──
         var btnRow = document.createElement("div");
-        btnRow.style.cssText = "display:flex;gap:6px";
-        var saveExitBtn = document.createElement("button");
-        saveExitBtn.style.cssText = "flex:1;padding:7px;background:#388e3c;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:500";
-        saveExitBtn.textContent = "記録する";
-        saveExitBtn.addEventListener("click", function() {
+        btnRow.style.cssText = "display:flex;gap:6px;margin-top:10px";
+
+        var saveAllBtn = document.createElement("button");
+        saveAllBtn.style.cssText = "flex:1;padding:7px;background:#388e3c;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:500";
+        saveAllBtn.textContent = "すべて保存";
+        saveAllBtn.addEventListener("click", function() {
           var rs = loadRecs();
           if (!rs[idx]) return;
-          if (!rs[idx].exits) rs[idx].exits = [];
-          rs[idx].exits.push({
-            date: dateInput.value,
-            direction: selectedDir,
-            reason: reasonTA.value,
-            price: priceInput.value,
-            profit: profitInput.value
+          // 既存を更新
+          exitForms.forEach(function(f, ei) {
+            if (!rs[idx].exits[ei]) return;
+            rs[idx].exits[ei].date = f.dateIn.value;
+            rs[idx].exits[ei].price = f.priceIn.value;
+            rs[idx].exits[ei].direction = f.dirW._selected;
+            rs[idx].exits[ei].reason = f.reasonIn.value;
+            rs[idx].exits[ei].profit = f.profitIn.value;
           });
-          saveRecs(rs);
-          r = rs[idx];
-          renderView();
+          // 新規追加（価格か利益が入力されていれば追加）
+          if (newPrice.value || newProfit.value) {
+            if (!rs[idx].exits) rs[idx].exits = [];
+            rs[idx].exits.push({
+              date: newDate.value,
+              direction: newDir._selected,
+              reason: newReason.value,
+              price: newPrice.value,
+              profit: newProfit.value
+            });
+          }
+          saveRecs(rs); r = rs[idx]; renderView();
         });
-        btnRow.appendChild(saveExitBtn);
-        var cancelExitBtn = document.createElement("button");
-        cancelExitBtn.style.cssText = "padding:7px 14px;background:#f5f5f5;color:#555;border:0.5px solid #ddd;border-radius:6px;font-size:12px";
-        cancelExitBtn.textContent = "キャンセル";
-        cancelExitBtn.addEventListener("click", renderView);
-        btnRow.appendChild(cancelExitBtn);
+        btnRow.appendChild(saveAllBtn);
+
+        var cancelBtn = document.createElement("button");
+        cancelBtn.style.cssText = "padding:7px 14px;background:#f5f5f5;color:#555;border:0.5px solid #ddd;border-radius:6px;font-size:12px";
+        cancelBtn.textContent = "キャンセル";
+        cancelBtn.addEventListener("click", renderView);
+        btnRow.appendChild(cancelBtn);
         card.appendChild(btnRow);
       }
 
