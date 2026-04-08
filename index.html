@@ -653,8 +653,18 @@ function buildChart5() {
 
         if (verified) {
           var resDiv = document.createElement("div");
-          resDiv.style.cssText = "font-size:11px;color:#555;margin-bottom:8px";
-          resDiv.textContent = "SQ実績: " + (r.sqResult==="up"?"▲ 上昇":"▼ 下落") + (r.verified_date?" / "+r.verified_date:"");
+          resDiv.style.cssText = "font-size:11px;color:#555;margin-bottom:4px";
+          var sqText = "SQ実績: " + (r.sqResult==="up"?"▲ 上昇":"▼ 下落") + (r.verified_date?" / "+r.verified_date:"");
+          if (r.sqValue) {
+            sqText += "　SQ値: " + Number(r.sqValue).toLocaleString() + "円";
+            if (r.closePrice && parseFloat(r.closePrice) > 0) {
+              var diff = parseFloat(r.sqValue) - parseFloat(r.closePrice);
+              var pct = (diff / parseFloat(r.closePrice) * 100).toFixed(2);
+              var sign = diff >= 0 ? "+" : "";
+              sqText += "　終値比: " + sign + diff.toLocaleString() + "円（" + sign + pct + "%）";
+            }
+          }
+          resDiv.textContent = sqText;
           card.appendChild(resDiv);
         }
 
@@ -886,6 +896,40 @@ function buildChart5() {
         });
         card.appendChild(resR);
 
+        // SQ値入力
+        var sqValLabel = document.createElement("div");
+        sqValLabel.style.cssText = "font-size:11px;color:#888;margin-bottom:3px";
+        sqValLabel.textContent = "SQ値（円）";
+        card.appendChild(sqValLabel);
+        var sqValInput = document.createElement("input");
+        sqValInput.type = "number";
+        sqValInput.placeholder = "例: 36500";
+        sqValInput.value = r.sqValue || "";
+        sqValInput.style.cssText = "width:100%;font-size:13px;padding:6px 8px;border-radius:6px;border:0.5px solid #ddd;margin-bottom:4px;background:#fff;color:#333";
+        card.appendChild(sqValInput);
+
+        // 日経終値との差をリアルタイム表示
+        var sqDiffDiv = document.createElement("div");
+        sqDiffDiv.style.cssText = "font-size:11px;margin-bottom:8px;min-height:16px;color:#555";
+        function updateSQDiff() {
+          var sqV = parseFloat(sqValInput.value);
+          var closeV = parseFloat(r.closePrice);
+          if (!isNaN(sqV) && !isNaN(closeV) && closeV > 0) {
+            var diff = sqV - closeV;
+            var pct = (diff / closeV * 100).toFixed(2);
+            sqDiffDiv.style.color = diff >= 0 ? "#388e3c" : "#d32f2f";
+            sqDiffDiv.textContent = "終値比: " + (diff >= 0 ? "+" : "") + diff.toLocaleString() + "円（" + (diff >= 0 ? "+" : "") + pct + "%）";
+          } else if (!isNaN(sqV) && (isNaN(closeV) || closeV <= 0)) {
+            sqDiffDiv.style.color = "#aaa";
+            sqDiffDiv.textContent = "※ 日経終値を入力すると差を表示します";
+          } else {
+            sqDiffDiv.textContent = "";
+          }
+        }
+        sqValInput.addEventListener("input", updateSQDiff);
+        updateSQDiff();
+        card.appendChild(sqDiffDiv);
+
         var mL = document.createElement("div");
         mL.style.cssText = "font-size:11px;color:#888;margin-bottom:3px";
         mL.textContent = "メモ";
@@ -906,6 +950,7 @@ function buildChart5() {
           rs[idx].closePrice = clInput.value;
           rs[idx].sqDir = editDir;
           rs[idx].memo = mTA.value;
+          rs[idx].sqValue = sqValInput.value;
           if (resultDir) {
             rs[idx].sqResult = resultDir;
             rs[idx].verified = true;
