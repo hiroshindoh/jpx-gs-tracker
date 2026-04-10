@@ -982,7 +982,15 @@ function buildChart5() {
           rs[idx].sqDir = editDir;
           rs[idx].memo = mTA.value;
           rs[idx].sqValue = sqValInput.value;
-          if (resultDir) {
+          // SQ値と終値から自動判定
+          var sqV = parseFloat(sqValInput.value);
+          var clV = parseFloat(clInput.value);
+          if (!isNaN(sqV) && sqV > 0 && !isNaN(clV) && clV > 0) {
+            var autoDir = sqV >= clV ? "up" : "down";
+            rs[idx].sqResult = autoDir;
+            rs[idx].verified = true;
+            rs[idx].verified_date = new Date().toISOString().slice(0,10);
+          } else if (resultDir) {
             rs[idx].sqResult = resultDir;
             rs[idx].verified = true;
             rs[idx].verified_date = new Date().toISOString().slice(0,10);
