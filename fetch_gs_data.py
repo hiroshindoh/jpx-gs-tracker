@@ -22,13 +22,16 @@ def get_limit_month(date_str):
     if d < second_fri:
         return d.strftime("%Y%m")
     else:
-        m = d.month + 1; y = d.year
-        if m > 12: m = 1; y += 1
+        m = d.month + 1
+        y = d.year
+        if m > 12:
+            m = 1
+            y += 1
         return f"{y}{m:02d}"
 
 def last_friday():
     d = datetime.today()
-    if d.weekday() == 4:   # 金曜日なら今日
+    if d.weekday() == 4:
         return d
     days_back = (d.weekday() + 3) % 7 or 7
     return d - timedelta(days=days_back)
@@ -151,7 +154,6 @@ def parse_vol(raw, date_str):
             if m:
                 opt_type = "CALL" if m.group(1) == "C" else "PUT"
                 strike   = int(m.group(3))
-                # 同一ストライク・種別があれば加算
                 found = False
                 for existing in opt_list:
                     if existing["strike"] == strike and existing["type"] == opt_type:
@@ -195,7 +197,9 @@ def main():
         for d in oi_data:
             print(str(d["strike"]) + "円 " + d["type"] + " " + d["side"] + ": " + str(d["qty"]) + "枚")
         new_entry = {
-            "date": date_str, "gs": oi_data,
+            "date": date_str,
+            "limit_month": get_limit_month(date_str),
+            "gs": oi_data,
             "strikes": {
                 "min": min(all_strikes) if all_strikes else 0,
                 "max": max(all_strikes) if all_strikes else 0,
@@ -224,24 +228,21 @@ def main():
     else:
         print("先物建玉残高: 取得失敗")
 
-    # ── 日次取引量（日中＋J-NET＋ナイト全4ファイルを合算）──
+    # ── 日次取引量（4セッション合算）──
     vol_data, vol_date, history_day = [], "", {}
     for days_back in range(5):
         dt = today - timedelta(days=days_back)
-        urls = vol_urls(dt)
         merged_history = {}
         merged_opts    = {}
         any_success    = False
-        for url in urls:
+        for url in vol_urls(dt):
             raw_vol = get(url)
             if not raw_vol:
                 continue
             any_success = True
             hday, opts = parse_vol(raw_vol, dt.strftime("%Y-%m-%d"))
-            # 先物取引量を合算
             for k, v in hday.items():
                 merged_history[k] = merged_history.get(k, 0) + v
-            # オプション取引量をstrike+typeをキーに合算
             for o in opts:
                 key = (o["strike"], o["type"])
                 if key in merged_opts:
@@ -265,17 +266,19 @@ def main():
     output = {
         "updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "oi": {
-            "date": date_str, "gs": oi_data,
+            "date": date_str,
+            "limit_month": get_limit_month(date_str),
+            "gs": oi_data,
             "strikes": {
                 "min": min(all_strikes) if all_strikes else 0,
                 "max": max(all_strikes) if all_strikes else 0,
                 "all": all_strikes
             }
         },
-        "vol":             {"date": vol_date, "gs": vol_data},
-        "history":         history,
-        "oi_history":      oi_history,
-        "fut_oi_history":  fut_oi_history
+        "vol":            {"date": vol_date, "gs": vol_data},
+        "history":        history,
+        "oi_history":     oi_history,
+        "fut_oi_history": fut_oi_history
     }
 
     with open("gs_data.json", "w", encoding="utf-8") as f:
