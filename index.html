@@ -58,7 +58,7 @@ function buildSnapshot(oi) {
   var mn = (oi.strikes && oi.strikes.min) ? oi.strikes.min : 51000;
   var mx = (oi.strikes && oi.strikes.max) ? oi.strikes.max : 56000;
   var map = {};
-  for (var s = 50000; s <= 57000; s += 125) {
+  for (var s = 44000; s <= 66000; s += 125) {
     map[s] = {callBuy:0, callSell:0, putBuy:0, putSell:0, disclosed: s >= mn && s <= mx};
   }
   var gs = oi.gs || [];
@@ -162,8 +162,20 @@ function buildChart1() {
   wrap.appendChild(hdr);
 
   // 行
+  // 全スナップショットの開示範囲から動的にストライク範囲を決定
+  var dynMin = 99999999, dynMax = 0;
+  for (var i = 0; i < snaps.length; i++) {
+    if (snaps[i].strikes && snaps[i].strikes.min) dynMin = Math.min(dynMin, snaps[i].strikes.min);
+    if (snaps[i].strikes && snaps[i].strikes.max) dynMax = Math.max(dynMax, snaps[i].strikes.max);
+  }
+  // 開示範囲の上下に1,500円のマージンを追加、125円刻みに丸める
+  var MARGIN = 1500;
+  if (dynMin === 99999999) dynMin = 51000;
+  if (dynMax === 0) dynMax = 57000;
+  dynMin = Math.floor((dynMin - MARGIN) / 125) * 125;
+  dynMax = Math.ceil((dynMax + MARGIN) / 125) * 125;
   var allS = [];
-  for (var s = 51000; s <= 57000; s += 125) allS.push(s);
+  for (var s = dynMin; s <= dynMax; s += 125) allS.push(s);
   allS.reverse();
 
   for (var si = 0; si < allS.length; si++) {
@@ -274,9 +286,20 @@ function buildChart2HTML() {
       vd.sort(function(a,b){return a.strike-b.strike;});
     }
   }
-  // Chart1と同じ全ストライク範囲（51,000〜57,000）に統一
+  // Chart1と同じ動的ストライク範囲を使用
+  var hist2 = (liveData && liveData.oi_history) ? liveData.oi_history : [];
+  var dynMin2 = 99999999, dynMax2 = 0;
+  for (var i = 0; i < hist2.length; i++) {
+    if (hist2[i].strikes && hist2[i].strikes.min) dynMin2 = Math.min(dynMin2, hist2[i].strikes.min);
+    if (hist2[i].strikes && hist2[i].strikes.max) dynMax2 = Math.max(dynMax2, hist2[i].strikes.max);
+  }
+  var MARGIN2 = 1500;
+  if (dynMin2 === 99999999) dynMin2 = 51000;
+  if (dynMax2 === 0) dynMax2 = 57000;
+  dynMin2 = Math.floor((dynMin2 - MARGIN2) / 125) * 125;
+  dynMax2 = Math.ceil((dynMax2 + MARGIN2) / 125) * 125;
   var allStrikes2 = [];
-  for (var s = 51000; s <= 57000; s += 125) allStrikes2.push(s);
+  for (var s = dynMin2; s <= dynMax2; s += 125) allStrikes2.push(s);
   if (!vd) {
     vd = allStrikes2.map(function(s){ return {strike:s, callVol:0, putVol:0}; });
   } else {
