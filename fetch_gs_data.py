@@ -14,10 +14,21 @@ def get(url):
     print("NG: HTTP " + str(r.status_code))
     return None
 
+def get_limit_month(date_str):
+    d = datetime.strptime(date_str, "%Y-%m-%d")
+    first = datetime(d.year, d.month, 1)
+    days_to_fri = (4 - first.weekday()) % 7
+    second_fri = first + timedelta(days=days_to_fri + 7)
+    if d < second_fri:
+        return d.strftime("%Y%m")
+    else:
+        m = d.month + 1; y = d.year
+        if m > 12: m = 1; y += 1
+        return f"{y}{m:02d}"
+
 def last_friday():
     d = datetime.today()
-    # 金曜日(weekday=4)なら今日を返す、それ以外は前の金曜日
-    if d.weekday() == 4:
+    if d.weekday() == 4:   # 金曜日なら今日
         return d
     days_back = (d.weekday() + 3) % 7 or 7
     return d - timedelta(days=days_back)
