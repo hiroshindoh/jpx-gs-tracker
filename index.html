@@ -414,10 +414,19 @@ function buildChart3HTML() {
 
 // ── グラフ④ HTML文字列 ──
 function buildChart4HTML() {
-  var fh = (liveData && liveData.fut_oi_history) ? liveData.fut_oi_history : {
+  var fhRaw = (liveData && liveData.fut_oi_history) ? liveData.fut_oi_history : {
     "2026-03-27":{NK225_2606:-13190,NK225_2609:27,MINI_2604:10000,MINI_2605:0,MINI_2606:0,TOPIX_2606:-30704,TOPIX_2609:-600},
     "2026-04-03":{NK225_2606:-6893,NK225_2609:27,MINI_2604:9000,MINI_2605:0,MINI_2606:0,TOPIX_2606:11258,TOPIX_2609:-600}
   };
+  // 現在のoiと同じ限月のデータのみ表示
+  var curOiDate4 = (liveData && liveData.oi) ? liveData.oi.date : "";
+  var curLM4 = curOiDate4 ? calcLimitMonth(curOiDate4) : "";
+  var fh = {};
+  var fhDates = Object.keys(fhRaw).sort();
+  for (var i = 0; i < fhDates.length; i++) {
+    var dt4 = fhDates[i];
+    if (!curLM4 || calcLimitMonth(dt4) === curLM4) fh[dt4] = fhRaw[dt4];
+  }
   var dates = Object.keys(fh).sort();
   if (!dates.length) return "<div style='padding:24px;color:#888;text-align:center'>データなし</div>";
   var SR = [
