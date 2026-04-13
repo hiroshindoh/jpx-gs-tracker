@@ -74,20 +74,42 @@ function buildSnapshot(oi) {
 }
 
 // ── グラフ① DOM生成 ──
+function calcLimitMonth(dateStr) {
+  // 日付から限月(YYYYMM)を計算: 第2金曜日以降→翌月限、それ以前→当月限
+  var d = new Date(dateStr);
+  var y = d.getFullYear(), m = d.getMonth(); // 0-indexed
+  var first = new Date(y, m, 1);
+  var daysToFri = (5 - first.getDay() + 7) % 7; // 5=金曜
+  var secondFri = new Date(y, m, 1 + daysToFri + 7);
+  if (d < secondFri) {
+    return String(y) + String(m + 1).padStart(2, "0");
+  } else {
+    var nm = m + 2; var ny = y;
+    if (nm > 12) { nm = 1; ny++; }
+    return String(ny) + String(nm).padStart(2, "0");
+  }
+}
+
 function buildChart1() {
   var cur = (liveData && liveData.oi) ? liveData.oi : FALLBACK;
   var hist = (liveData && liveData.oi_history) ? liveData.oi_history : [];
   var ZCOL = ["#fff9c4","#ffe0b2","#f3e5f5","#e8f5e9","#e3f2fd"];
 
-  var snaps = [];
+  // 現在のoiと同じ限月のエントリのみに絞り込む
+  var curLimitMonth = calcLimitMonth(cur.date);
+  var filteredHist = [];
   for (var i = 0; i < hist.length; i++) {
+    if (calcLimitMonth(hist[i].date) === curLimitMonth) filteredHist.push(hist[i]);
+  }
+  var snaps = [];
+  for (var i = 0; i < filteredHist.length; i++) {
     snaps.push({
-      date: hist[i].date,
-      map: buildSnapshot(hist[i]),
-      strikes: hist[i].strikes,
+      date: filteredHist[i].date,
+      map: buildSnapshot(filteredHist[i]),
+      strikes: filteredHist[i].strikes,
       color: ZCOL[i] || "#f5f5f5",
-      label: (hist[i].date && hist[i].date.length >= 10) ? hist[i].date.slice(5).replace("-","/") : hist[i].date || "",
-      isCur: hist[i].date === cur.date
+      label: (filteredHist[i].date && filteredHist[i].date.length >= 10) ? filteredHist[i].date.slice(5).replace("-","/") : filteredHist[i].date || "",
+      isCur: filteredHist[i].date === cur.date
     });
   }
   var curSnap = null;
@@ -287,7 +309,10 @@ function buildChart2HTML() {
     }
   }
   // Chart1と同じ動的ストライク範囲を使用
-  var hist2 = (liveData && liveData.oi_history) ? liveData.oi_history : [];
+  var hist2raw = (liveData && liveData.oi_history) ? liveData.oi_history : [];
+  var curOiDate2 = (liveData && liveData.oi) ? liveData.oi.date : "";
+  var curLM2 = curOiDate2 ? calcLimitMonth(curOiDate2) : "";
+  var hist2 = curLM2 ? hist2raw.filter(function(h){ return calcLimitMonth(h.date) === curLM2; }) : hist2raw;
   var dynMin2 = 99999999, dynMax2 = 0;
   for (var i = 0; i < hist2.length; i++) {
     if (hist2[i].strikes && hist2[i].strikes.min) dynMin2 = Math.min(dynMin2, hist2[i].strikes.min);
