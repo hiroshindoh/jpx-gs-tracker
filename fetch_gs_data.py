@@ -16,6 +16,9 @@ def get(url):
 
 def last_friday():
     d = datetime.today()
+    # 金曜日(weekday=4)なら今日を返す、それ以外は前の金曜日
+    if d.weekday() == 4:
+        return d
     days_back = (d.weekday() + 3) % 7 or 7
     return d - timedelta(days=days_back)
 
