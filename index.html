@@ -1539,12 +1539,23 @@ function buildChart6() {
         + "④それを妨げた心理状態への対策案（具体的なルールや仕組み）\n\n"
         + "まだ話されていない観点があれば自然に質問してください。\n"
         + "十分に話し合えたと思ったら「内容をまとめましょうか？」と提案してください。\n"
-        + "返答は簡潔に、スマホ画面で読みやすい長さにしてください。";
+        + "返答は簡潔に、スマホ画面で読みやすい長さにしてください。"
+        + (stepImageFilename ? "\n\nユーザーはチャートの画像を共有しています。最初のメッセージに画像が添付されています。画像からチャートの内容（価格帯、トレンド、エントリー・決済ポイントなど）を読み取って振り返りに活用してください。" : "");
 
-      // メッセージ構築（画像あれば最初のユーザーメッセージに付与）
+      // メッセージ構築
+      // APIはuser/assistantが必ず交互である必要がある。
+      // currentChatMessages = [assistant挨拶, user, assistant, user, ...]
+      // → APIに渡すのはuserから始まる部分のみ抽出する
       var apiMessages;
-      if (stepImageFilename && currentChatMessages.length === 1) {
-        // 初回のみ画像をBase64で送る
+      // userから始まるメッセージ列を取り出す
+      var userStartIdx = 0;
+      for (var mi = 0; mi < currentChatMessages.length; mi++) {
+        if (currentChatMessages[mi].role === "user") { userStartIdx = mi; break; }
+      }
+      var baseMessages = currentChatMessages.slice(userStartIdx);
+
+      if (stepImageFilename && baseMessages.length === 1) {
+        // 初回ユーザーメッセージのみの場合：画像をBase64で添付して送る
         try {
           var imgData = await fetchImageAsBase64(stepImageFilename);
           apiMessages = [{
@@ -1554,14 +1565,13 @@ function buildChart6() {
               { type: "text", text: userText }
             ]
           }];
-          // 以降のAPIコール用にテキストのみ保持（Base64は毎回送らない）
         } catch(e) {
           // 画像取得失敗でもチャットは続行
           console.log("画像取得失敗:", e.message);
-          apiMessages = currentChatMessages.slice();
+          apiMessages = baseMessages;
         }
       } else {
-        apiMessages = currentChatMessages.slice();
+        apiMessages = baseMessages;
       }
 
       try {
