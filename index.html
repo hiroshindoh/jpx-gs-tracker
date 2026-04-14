@@ -15,16 +15,23 @@ textarea,input,select{font-family:inherit}
 .hdr{padding:5px 10px;font-size:10px;font-weight:700;color:#fff}
 .ci{background:#fff;padding:10px 6px}
 #tip{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border:1px solid #bbb;border-radius:8px;padding:10px 14px;font-size:12px;z-index:999;box-shadow:0 4px 12px rgba(0,0,0,.15);pointer-events:none;color:#333;display:none}
+#imgModal{position:fixed;inset:0;background:rgba(0,0,0,0.9);z-index:9999;display:none;align-items:center;justify-content:center;flex-direction:column}
+#imgModal img{max-width:96vw;max-height:85vh;border-radius:8px;object-fit:contain}
+#imgModal .close-btn{margin-top:14px;color:#fff;font-size:14px;background:rgba(255,255,255,0.15);border:none;border-radius:20px;padding:7px 22px;cursor:pointer}
 </style>
 </head>
 <body>
 <div id="root"><div style="color:#ffb74d;padding:20px;text-align:center">読み込み中...</div></div>
 <div id="tip"></div>
+<div id="imgModal">
+  <img id="imgModalImg" src="" alt="chart">
+  <button class="close-btn" id="imgModalClose">✕ 閉じる</button>
+</div>
 <script>
 var JSON_URL = "https://hiroshindoh.github.io/jpx-gs-tracker/gs_data.json";
+var CHARTS_BASE = "https://hiroshindoh.github.io/jpx-gs-tracker/charts/";
 var BUY = "#1976d2", SELL = "#d32f2f", ATM_LINE = 54000;
 var liveData = null, currentTab = "all";
-var predNK = "down", predTX = "up";
 
 var FALLBACK = {date:"2026-03-13",gs:[
   {strike:54000,type:"CALL",side:"Buy",qty:150},
@@ -33,7 +40,17 @@ var FALLBACK = {date:"2026-03-13",gs:[
   {strike:53375,type:"PUT",side:"Sell",qty:6}
 ],strikes:{min:53125,max:54125}};
 
-// ── ツールチップ ──
+document.getElementById("imgModalClose").addEventListener("click", function() {
+  document.getElementById("imgModal").style.display = "none";
+});
+document.getElementById("imgModal").addEventListener("click", function(e) {
+  if (e.target === this) this.style.display = "none";
+});
+function openImgModal(src) {
+  document.getElementById("imgModalImg").src = src;
+  document.getElementById("imgModal").style.display = "flex";
+}
+
 function showTip(s, bl, bv, sl, sv) {
   var t = document.getElementById("tip");
   t.innerHTML = "<b>" + s.toLocaleString() + "円</b><br>"
@@ -43,7 +60,6 @@ function showTip(s, bl, bv, sl, sv) {
 }
 function hideTip() { document.getElementById("tip").style.display = "none"; }
 
-// ── localStorage ──
 function loadRecs() {
   try { var d = localStorage.getItem("gs_predictions"); return d ? JSON.parse(d) : []; }
   catch(e) { return []; }
@@ -53,7 +69,6 @@ function saveRecs(r) {
   catch(e) { console.log("storage error", e); }
 }
 
-// ── スナップショット構築 ──
 function buildSnapshot(oi) {
   var mn = (oi.strikes && oi.strikes.min) ? oi.strikes.min : 51000;
   var mx = (oi.strikes && oi.strikes.max) ? oi.strikes.max : 56000;
@@ -73,13 +88,11 @@ function buildSnapshot(oi) {
   return map;
 }
 
-// ── グラフ① DOM生成 ──
 function calcLimitMonth(dateStr) {
-  // 日付から限月(YYYYMM)を計算: 第2金曜日以降→翌月限、それ以前→当月限
   var d = new Date(dateStr);
-  var y = d.getFullYear(), m = d.getMonth(); // 0-indexed
+  var y = d.getFullYear(), m = d.getMonth();
   var first = new Date(y, m, 1);
-  var daysToFri = (5 - first.getDay() + 7) % 7; // 5=金曜
+  var daysToFri = (5 - first.getDay() + 7) % 7;
   var secondFri = new Date(y, m, 1 + daysToFri + 7);
   if (d < secondFri) {
     return String(y) + String(m + 1).padStart(2, "0");
@@ -95,7 +108,6 @@ function buildChart1() {
   var hist = (liveData && liveData.oi_history) ? liveData.oi_history : [];
   var ZCOL = ["#fff9c4","#ffe0b2","#f3e5f5","#e8f5e9","#e3f2fd"];
 
-  // 現在のoiと同じ限月のエントリのみに絞り込む
   var curLimitMonth = calcLimitMonth(cur.date);
   var filteredHist = [];
   for (var i = 0; i < hist.length; i++) {
@@ -141,7 +153,6 @@ function buildChart1() {
   wrap.className = "ci";
   wrap.addEventListener("mouseleave", hideTip);
 
-  // タイトル + パイチャート
   var titleRow = document.createElement("div");
   titleRow.style.cssText = "display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:3px";
   var titleLeft = document.createElement("div");
@@ -167,7 +178,6 @@ function buildChart1() {
   }
   wrap.appendChild(titleRow);
 
-  // スケール
   var scale = document.createElement("div");
   scale.style.cssText = "display:grid;grid-template-columns:1fr 68px 1fr;margin-bottom:2px";
   scale.innerHTML = "<div style='display:flex;justify-content:space-between;font-size:7px;color:#888'><span>200</span><span>150</span><span>100</span><span>50</span><span>0</span></div>"
@@ -175,7 +185,6 @@ function buildChart1() {
     + "<div style='display:flex;justify-content:space-between;font-size:7px;color:#888'><span>0</span><span>50</span><span>100</span><span>150</span><span>200</span></div>";
   wrap.appendChild(scale);
 
-  // ヘッダー
   var hdr = document.createElement("div");
   hdr.style.cssText = "display:grid;grid-template-columns:1fr 68px 1fr;border-bottom:1px solid #ccc";
   hdr.innerHTML = "<div style='text-align:center;background:#f5f5f5;font-size:11px;font-weight:700;padding:3px 0'>CALL</div>"
@@ -183,14 +192,11 @@ function buildChart1() {
     + "<div style='text-align:center;background:#f5f5f5;font-size:11px;font-weight:700;padding:3px 0'>PUT</div>";
   wrap.appendChild(hdr);
 
-  // 行
-  // 全スナップショットの開示範囲から動的にストライク範囲を決定
   var dynMin = 99999999, dynMax = 0;
   for (var i = 0; i < snaps.length; i++) {
     if (snaps[i].strikes && snaps[i].strikes.min) dynMin = Math.min(dynMin, snaps[i].strikes.min);
     if (snaps[i].strikes && snaps[i].strikes.max) dynMax = Math.max(dynMax, snaps[i].strikes.max);
   }
-  // 開示範囲の上下に1,500円のマージンを追加、125円刻みに丸める
   var MARGIN = 1500;
   if (dynMin === 99999999) dynMin = 51000;
   if (dynMax === 0) dynMax = 57000;
@@ -215,7 +221,6 @@ function buildChart1() {
     var rowWrap = document.createElement("div");
     rowWrap.style.position = "relative";
 
-    // 開示範囲ラベル
     for (var j = 0; j < zones.length; j++) {
       if (zones[j].strikes && zones[j].strikes.max === strike) {
         var lbl = document.createElement("div");
@@ -228,13 +233,11 @@ function buildChart1() {
     var row = document.createElement("div");
     row.style.cssText = "display:grid;grid-template-columns:1fr 68px 1fr;height:" + RH + "px";
 
-    // CALL側
     var callDiv = document.createElement("div");
     callDiv.style.cssText = "background:" + bg + ";position:relative;overflow:hidden;border-right:1px solid #ccc";
     (function(s2, cb, cs) {
       callDiv.addEventListener("mouseenter", function() { showTip(s2, "Buy", cb, "Sell", cs); });
     })(strike, c2.callBuy, c2.callSell);
-    // 過去データ
     for (var j = 0; j < oldSnaps.length; j++) {
       var o = oldSnaps[j].map[strike];
       if (o) {
@@ -246,13 +249,11 @@ function buildChart1() {
     if (c2.callSell > 0) { var d2 = document.createElement("div"); d2.style.cssText = "position:absolute;right:" + Math.min(c2.callBuy/MAX*100,100) + "%;top:1px;height:" + BH + "px;width:" + Math.min(c2.callSell/MAX*100,100) + "%;background:" + SELL; callDiv.appendChild(d2); }
     row.appendChild(callDiv);
 
-    // 中央
     var midDiv = document.createElement("div");
     midDiv.style.cssText = "height:" + RH + "px;display:flex;align-items:center;justify-content:center;font-size:7px;font-weight:" + (isAtm?700:400) + ";color:#555;background:" + bg;
     midDiv.textContent = strike.toLocaleString();
     row.appendChild(midDiv);
 
-    // PUT側
     var putDiv = document.createElement("div");
     putDiv.style.cssText = "background:" + bg + ";position:relative;overflow:hidden;border-left:1px solid #ccc";
     (function(s2, pb, ps) {
@@ -273,7 +274,6 @@ function buildChart1() {
     wrap.appendChild(rowWrap);
   }
 
-  // 凡例
   var lgnd = document.createElement("div");
   lgnd.style.cssText = "margin-top:5px;padding:4px 6px;background:#f5f5f5;border-radius:4px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:8px";
   for (var i = 0; i < snaps.length; i++) {
@@ -284,7 +284,6 @@ function buildChart1() {
   return wrap;
 }
 
-// ── グラフ② HTML文字列 ──
 function buildChart2HTML() {
   var vd = null;
   if (liveData && liveData.vol && liveData.vol.gs && liveData.vol.gs.length) {
@@ -308,7 +307,6 @@ function buildChart2HTML() {
       vd.sort(function(a,b){return a.strike-b.strike;});
     }
   }
-  // Chart1と同じ動的ストライク範囲を使用
   var hist2raw = (liveData && liveData.oi_history) ? liveData.oi_history : [];
   var curOiDate2 = (liveData && liveData.oi) ? liveData.oi.date : "";
   var curLM2 = curOiDate2 ? calcLimitMonth(curOiDate2) : "";
@@ -365,7 +363,6 @@ function buildChart2HTML() {
     + rows + "</div>";
 }
 
-// ── グラフ③ HTML文字列 ──
 function buildChart3HTML() {
   var hist = (liveData && liveData.history) ? liveData.history : {};
   var dates = Object.keys(hist).sort();
@@ -412,13 +409,11 @@ function buildChart3HTML() {
     + sHTML + "<div style='font-size:7px;color:#888;margin-top:4px;padding-left:38px'>" + xL + "</div></div>";
 }
 
-// ── グラフ④ HTML文字列 ──
 function buildChart4HTML() {
   var fhRaw = (liveData && liveData.fut_oi_history) ? liveData.fut_oi_history : {
     "2026-03-27":{NK225_2606:-13190,NK225_2609:27,MINI_2604:10000,MINI_2605:0,MINI_2606:0,TOPIX_2606:-30704,TOPIX_2609:-600},
     "2026-04-03":{NK225_2606:-6893,NK225_2609:27,MINI_2604:9000,MINI_2605:0,MINI_2606:0,TOPIX_2606:11258,TOPIX_2609:-600}
   };
-  // 現在のoiと同じ限月のデータのみ表示
   var curOiDate4 = (liveData && liveData.oi) ? liveData.oi.date : "";
   var curLM4 = curOiDate4 ? calcLimitMonth(curOiDate4) : "";
   var fh = {};
@@ -488,11 +483,9 @@ function buildChart4HTML() {
     + "<div style='font-size:8px;color:#aaa;text-align:center'>&#9679; 最新 &#9675; 過去 mini=large&#247;10</div></div>";
 }
 
-// ── グラフ⑤ 予測記録 ──
 function buildChart5() {
   var recs = loadRecs();
 
-  // 自動入力データを収集
   var today = new Date().toISOString().slice(0,10);
   var oiDate = (liveData && liveData.oi) ? liveData.oi.date : "";
   var dataPeriod = oiDate.length >= 10 ? (oiDate.slice(5,7).replace(/^0/,"") + "/" + oiDate.slice(8,10).replace(/^0/,"") + "週") : "";
@@ -528,7 +521,6 @@ function buildChart5() {
   var wrap = document.createElement("div");
   wrap.style.cssText = "background:#fff;padding:12px";
 
-  // ─── タイトル + 新規登録ボタン ───
   var titleRow = document.createElement("div");
   titleRow.style.cssText = "display:flex;justify-content:space-between;align-items:center;margin-bottom:12px";
   var title = document.createElement("div");
@@ -541,7 +533,6 @@ function buildChart5() {
   titleRow.appendChild(newBtn);
   wrap.appendChild(titleRow);
 
-  // ─── 新規フォーム（初期非表示）───
   var form = document.createElement("div");
   form.style.cssText = "background:#f5f5f5;border-radius:8px;padding:10px;margin-bottom:16px;display:none";
 
@@ -620,7 +611,8 @@ function buildChart5() {
       closePrice: closeInput.value || "",
       sqDir: newSQDir, memo: memoTA.value,
       verified: false, sqResult: "",
-      exits: []
+      exits: [],
+      chartImages: []
     };
     var rs = loadRecs(); rs.push(rec); saveRecs(rs); setTab("c5");
   });
@@ -636,13 +628,11 @@ function buildChart5() {
   form.appendChild(formBtns);
   wrap.appendChild(form);
 
-  // 新規登録ボタン → フォーム表示
   newBtn.addEventListener("click", function() {
     form.style.display = "block";
     newBtn.style.display = "none";
   });
 
-  // ─── 記録一覧 ───
   if (!recs.length) {
     var empty = document.createElement("div");
     empty.style.cssText = "color:#aaa;font-size:12px;text-align:center;padding:24px 0";
@@ -655,19 +645,62 @@ function buildChart5() {
 
   for (var ri = recs.length - 1; ri >= 0; ri--) {
     (function(r, idx) {
+      if (!r.exits) r.exits = [];
+      if (!r.chartImages) r.chartImages = [];
+
       var verified = r.verified && r.sqResult;
       var correct  = verified && r.sqDir === r.sqResult;
       var borderColor = verified ? (correct ? "#4caf50" : "#f44336") : "#e0e0e0";
       var bgColor     = verified ? (correct ? "#e8f5e9" : "#ffebee") : "#fafafa";
-      if (!r.exits) r.exits = [];
 
       var card = document.createElement("div");
+      card.id = "record-" + String(r.id).padStart(3,"0");
       card.style.cssText = "border:1.5px solid " + borderColor + ";border-radius:8px;padding:10px;margin-bottom:10px;background:" + bgColor;
+
+      function buildImageStrip(images, editable) {
+        if (!images || !images.length) return null;
+        var strip = document.createElement("div");
+        strip.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px";
+        images.forEach(function(fname, fi) {
+          var src = CHARTS_BASE + fname;
+          var wrap2 = document.createElement("div");
+          wrap2.style.cssText = "position:relative;display:inline-block";
+          var img = document.createElement("img");
+          img.src = src;
+          img.alt = fname;
+          img.style.cssText = "width:72px;height:52px;object-fit:cover;border-radius:5px;border:1.5px solid #bbb;cursor:pointer;display:block;background:#eee";
+          img.addEventListener("click", function() { openImgModal(src); });
+          img.addEventListener("error", function() {
+            img.style.display = "none";
+            var err = document.createElement("div");
+            err.style.cssText = "width:72px;height:52px;border-radius:5px;border:1.5px solid #f5c6cb;background:#fff3f3;display:flex;align-items:center;justify-content:center;font-size:9px;color:#d32f2f;text-align:center;padding:2px";
+            err.textContent = "画像なし\n" + fname;
+            wrap2.insertBefore(err, img);
+          });
+          wrap2.appendChild(img);
+          if (editable) {
+            var delImgBtn = document.createElement("button");
+            delImgBtn.style.cssText = "position:absolute;top:-5px;right:-5px;width:16px;height:16px;border-radius:50%;background:#d32f2f;color:#fff;font-size:9px;padding:0;line-height:16px;text-align:center;border:none;display:flex;align-items:center;justify-content:center";
+            delImgBtn.textContent = "✕";
+            (function(fidx) {
+              delImgBtn.addEventListener("click", function(e) {
+                e.stopPropagation();
+                var rs = loadRecs();
+                if (!rs[idx] || !rs[idx].chartImages) return;
+                rs[idx].chartImages.splice(fidx, 1);
+                saveRecs(rs); r = rs[idx]; renderView();
+              });
+            })(fi);
+            wrap2.appendChild(delImgBtn);
+          }
+          strip.appendChild(wrap2);
+        });
+        return strip;
+      }
 
       function renderView() {
         card.innerHTML = "";
 
-        // ヘッダー
         var topRow = document.createElement("div");
         topRow.style.cssText = "display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:4px";
         var leftBadges = document.createElement("div");
@@ -688,7 +721,6 @@ function buildChart5() {
         topRow.appendChild(statusBadge);
         card.appendChild(topRow);
 
-        // データグリッド
         var grid = document.createElement("div");
         grid.style.cssText = "display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px;margin-bottom:8px";
         function cell(lbl, val) {
@@ -725,7 +757,6 @@ function buildChart5() {
           card.appendChild(resDiv);
         }
 
-        // ── 利益確定記録 ──
         if (r.exits && r.exits.length > 0) {
           var exitTitle = document.createElement("div");
           exitTitle.style.cssText = "font-size:11px;font-weight:500;color:#388e3c;margin-bottom:4px;border-top:0.5px solid #ddd;padding-top:8px";
@@ -749,7 +780,18 @@ function buildChart5() {
           }
         }
 
-        // ボタン行
+        if (r.chartImages && r.chartImages.length > 0) {
+          var imgSec = document.createElement("div");
+          imgSec.style.cssText = "border-top:0.5px solid #ddd;padding-top:8px;margin-bottom:4px";
+          var imgTitle = document.createElement("div");
+          imgTitle.style.cssText = "font-size:11px;font-weight:500;color:#1565c0;margin-bottom:6px";
+          imgTitle.textContent = "📷 チャート画像（" + r.chartImages.length + "枚）";
+          imgSec.appendChild(imgTitle);
+          var strip = buildImageStrip(r.chartImages, false);
+          if (strip) imgSec.appendChild(strip);
+          card.appendChild(imgSec);
+        }
+
         var btnRow = document.createElement("div");
         btnRow.style.cssText = "display:flex;gap:6px;margin-top:6px;flex-wrap:wrap";
         var editBtn = document.createElement("button");
@@ -762,6 +804,11 @@ function buildChart5() {
         exitBtn.textContent = "💰 利益確定を編集/追加";
         exitBtn.addEventListener("click", function() { renderExitForm(); });
         btnRow.appendChild(exitBtn);
+        var imgBtn = document.createElement("button");
+        imgBtn.style.cssText = "flex:1;padding:6px;font-size:11px;border-radius:6px;background:#e3f2fd;color:#1565c0;border:0.5px solid #90caf9;font-weight:500";
+        imgBtn.textContent = "📷 画像を追加";
+        imgBtn.addEventListener("click", function() { renderImageForm(); });
+        btnRow.appendChild(imgBtn);
         var delBtn = document.createElement("button");
         delBtn.style.cssText = "padding:6px 12px;font-size:11px;border-radius:6px;background:#f5f5f5;color:#d32f2f;border:0.5px solid #ddd";
         delBtn.textContent = "削除";
@@ -772,7 +819,115 @@ function buildChart5() {
         card.appendChild(btnRow);
       }
 
-      // ── 利益確定 編集/追加フォーム ──
+      function renderImageForm() {
+        card.innerHTML = "";
+        card.style.borderColor = "#1976d2";
+        card.style.background = "#fff";
+
+        var hdrLabel = document.createElement("div");
+        hdrLabel.style.cssText = "font-size:12px;font-weight:500;color:#1565c0;margin-bottom:10px";
+        hdrLabel.textContent = "📷 チャート画像を追加・管理";
+        card.appendChild(hdrLabel);
+
+        var guide = document.createElement("div");
+        guide.style.cssText = "background:#e3f2fd;border-radius:6px;padding:8px 10px;font-size:10px;color:#1565c0;margin-bottom:12px;line-height:1.7";
+        guide.innerHTML = "<b>画像アップロード手順</b><br>"
+          + "① Safari で <b>github.com/hiroshindoh/jpx-gs-tracker</b> を開く<br>"
+          + "② <b>charts/</b> フォルダ → 「Add file」→「Upload files」<br>"
+          + "③ 画像をアップ → ファイル名をここに入力";
+        card.appendChild(guide);
+
+        if (r.chartImages && r.chartImages.length > 0) {
+          var existLabel = document.createElement("div");
+          existLabel.style.cssText = "font-size:11px;color:#555;font-weight:500;margin-bottom:6px";
+          existLabel.textContent = "登録済み画像（タップで拡大・✕で削除）";
+          card.appendChild(existLabel);
+          var strip = buildImageStrip(r.chartImages, true);
+          if (strip) card.appendChild(strip);
+        }
+
+        var addLabel = document.createElement("div");
+        addLabel.style.cssText = "font-size:11px;color:#555;font-weight:500;margin-bottom:6px";
+        addLabel.textContent = "＋ ファイル名を入力して追加";
+        card.appendChild(addLabel);
+
+        var fnLabel = document.createElement("div");
+        fnLabel.style.cssText = "font-size:10px;color:#888;margin-bottom:3px";
+        fnLabel.textContent = "ファイル名（例: chart_20260413.jpg）";
+        card.appendChild(fnLabel);
+        var fnInput = document.createElement("input");
+        fnInput.type = "text";
+        fnInput.placeholder = "chart_20260413.jpg";
+        fnInput.style.cssText = "width:100%;font-size:13px;padding:7px 9px;border-radius:6px;border:1px solid #90caf9;margin-bottom:6px;background:#fff;color:#333";
+        card.appendChild(fnInput);
+
+        var previewArea = document.createElement("div");
+        previewArea.style.cssText = "margin-bottom:10px;min-height:0";
+        card.appendChild(previewArea);
+
+        fnInput.addEventListener("input", function() {
+          previewArea.innerHTML = "";
+          var fn = fnInput.value.trim();
+          if (!fn) return;
+          var src = CHARTS_BASE + fn;
+          var pWrap = document.createElement("div");
+          pWrap.style.cssText = "display:flex;align-items:center;gap:8px;padding:6px;background:#f5f5f5;border-radius:6px";
+          var pImg = document.createElement("img");
+          pImg.src = src;
+          pImg.style.cssText = "width:80px;height:58px;object-fit:cover;border-radius:5px;border:1px solid #bbb;cursor:pointer";
+          pImg.addEventListener("click", function() { openImgModal(src); });
+          var pStatus = document.createElement("div");
+          pStatus.style.cssText = "font-size:10px;color:#555";
+          pStatus.textContent = "プレビュー読み込み中...";
+          pImg.addEventListener("load", function() {
+            pStatus.style.color = "#388e3c";
+            pStatus.textContent = "✓ 画像を確認しました\nタップで拡大";
+            pStatus.style.whiteSpace = "pre-line";
+          });
+          pImg.addEventListener("error", function() {
+            pImg.style.display = "none";
+            pStatus.style.color = "#d32f2f";
+            pStatus.textContent = "⚠ 画像が見つかりません\nGitHubにアップロードされましたか？";
+            pStatus.style.whiteSpace = "pre-line";
+          });
+          pWrap.appendChild(pImg);
+          pWrap.appendChild(pStatus);
+          previewArea.appendChild(pWrap);
+        });
+
+        var addImgBtn = document.createElement("button");
+        addImgBtn.style.cssText = "width:100%;padding:8px;background:#1565c0;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:500;margin-bottom:6px";
+        addImgBtn.textContent = "この画像を記録に追加";
+        addImgBtn.addEventListener("click", function() {
+          var fn = fnInput.value.trim();
+          if (!fn) { alert("ファイル名を入力してください"); return; }
+          var rs = loadRecs();
+          if (!rs[idx]) return;
+          if (!rs[idx].chartImages) rs[idx].chartImages = [];
+          if (rs[idx].chartImages.indexOf(fn) >= 0) {
+            alert("この画像はすでに登録されています");
+            return;
+          }
+          rs[idx].chartImages.push(fn);
+          saveRecs(rs);
+          r = rs[idx];
+          fnInput.value = "";
+          previewArea.innerHTML = "";
+          renderImageForm();
+        });
+        card.appendChild(addImgBtn);
+
+        var backBtn = document.createElement("button");
+        backBtn.style.cssText = "width:100%;padding:7px;background:#f5f5f5;color:#555;border:0.5px solid #ddd;border-radius:6px;font-size:12px";
+        backBtn.textContent = "← 記録に戻る";
+        backBtn.addEventListener("click", function() {
+          card.style.borderColor = borderColor;
+          card.style.background = bgColor;
+          renderView();
+        });
+        card.appendChild(backBtn);
+      }
+
       function renderExitForm() {
         card.innerHTML = "";
         var exits = r.exits || [];
@@ -818,7 +973,6 @@ function buildChart5() {
           return wrap;
         }
 
-        // ── 既存の利益確定記録を編集可能に表示 ──
         var exitForms = [];
         if (exits.length === 0) {
           var noExit = document.createElement("div");
@@ -865,7 +1019,6 @@ function buildChart5() {
           card.appendChild(exWrap);
         });
 
-        // ── 新規追加フォーム ──
         var addHdr = document.createElement("div");
         addHdr.style.cssText = "font-size:11px;font-weight:500;color:#555;margin-bottom:8px;border-top:0.5px solid #ddd;padding-top:10px";
         addHdr.textContent = "+ 新規追加";
@@ -882,7 +1035,6 @@ function buildChart5() {
         var newProfit = makeInput("number", "", "例: 50");
         card.appendChild(makeLbl("いくら儲けたか（万円）")); card.appendChild(newProfit);
 
-        // ── ボタン行 ──
         var btnRow = document.createElement("div");
         btnRow.style.cssText = "display:flex;gap:6px;margin-top:10px";
 
@@ -892,7 +1044,6 @@ function buildChart5() {
         saveAllBtn.addEventListener("click", function() {
           var rs = loadRecs();
           if (!rs[idx]) return;
-          // 既存を更新
           exitForms.forEach(function(f, ei) {
             if (!rs[idx].exits[ei]) return;
             rs[idx].exits[ei].date = f.dateIn.value;
@@ -901,7 +1052,6 @@ function buildChart5() {
             rs[idx].exits[ei].reason = f.reasonIn.value;
             rs[idx].exits[ei].profit = f.profitIn.value;
           });
-          // 新規追加（価格か利益が入力されていれば追加）
           if (newPrice.value || newProfit.value) {
             if (!rs[idx].exits) rs[idx].exits = [];
             rs[idx].exits.push({
@@ -924,7 +1074,6 @@ function buildChart5() {
         card.appendChild(btnRow);
       }
 
-      // ── 編集モード ──
       function renderEdit() {
         card.innerHTML = "";
         card.style.borderColor = "#1976d2";
@@ -984,7 +1133,6 @@ function buildChart5() {
         });
         card.appendChild(resR);
 
-        // SQ値入力
         var sqValLabel = document.createElement("div");
         sqValLabel.style.cssText = "font-size:11px;color:#888;margin-bottom:3px";
         sqValLabel.textContent = "SQ値（円）";
@@ -996,7 +1144,6 @@ function buildChart5() {
         sqValInput.style.cssText = "width:100%;font-size:13px;padding:6px 8px;border-radius:6px;border:0.5px solid #ddd;margin-bottom:4px;background:#fff;color:#333";
         card.appendChild(sqValInput);
 
-        // 日経終値との差をリアルタイム表示
         var sqDiffDiv = document.createElement("div");
         sqDiffDiv.style.cssText = "font-size:11px;margin-bottom:8px;min-height:16px;color:#555";
         function updateSQDiff() {
@@ -1039,7 +1186,6 @@ function buildChart5() {
           rs[idx].sqDir = editDir;
           rs[idx].memo = mTA.value;
           rs[idx].sqValue = sqValInput.value;
-          // SQ値と終値から自動判定
           var sqV = parseFloat(sqValInput.value);
           var clV = parseFloat(clInput.value);
           if (!isNaN(sqV) && sqV > 0 && !isNaN(clV) && clV > 0) {
@@ -1082,7 +1228,690 @@ function buildChart5() {
   return wrap;
 }
 
-// ── タブ・レンダー ──
+// ── グラフ⑥ 失敗記録（全面書き直し：STEP1→STEP2→STEP3） ──
+function loadFailures() {
+  try { var d = localStorage.getItem("gs_failures"); return d ? JSON.parse(d) : []; }
+  catch(e) { return []; }
+}
+function saveFailures(arr) {
+  try { localStorage.setItem("gs_failures", JSON.stringify(arr)); }
+  catch(e) { console.log("storage error", e); }
+}
+function getApiKey() {
+  try { return localStorage.getItem("gs_claude_api_key") || ""; }
+  catch(e) { return ""; }
+}
+function setApiKey(k) {
+  try { localStorage.setItem("gs_claude_api_key", k); }
+  catch(e) {}
+}
+
+var FAILURE_TAGS = ["ルール違反","損切り遅れ","利確遅れ","逆張り","過信","ナンピン","その他"];
+var FAILURE_TAG_COLORS = ["#c62828","#d32f2f","#e65100","#6a1b9a","#1565c0","#2e7d32","#555"];
+
+// GitHub URL → Base64変換（チャット一時利用のみ・localStorageには保存しない）
+async function fetchImageAsBase64(filename) {
+  var url = CHARTS_BASE + filename + "?t=" + Date.now();
+  var res = await fetch(url);
+  if (!res.ok) throw new Error("画像の取得に失敗しました: " + filename);
+  var blob = await res.blob();
+  return new Promise(function(resolve, reject) {
+    var reader = new FileReader();
+    reader.onload = function() {
+      var result = reader.result;
+      var comma = result.indexOf(",");
+      var mediaType = result.slice(5, result.indexOf(";")) || "image/png";
+      var b64 = result.slice(comma + 1);
+      resolve({ b64: b64, mediaType: mediaType });
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+function buildChart6() {
+  // ── 関数スコープ内の状態変数 ──
+  var currentChatMessages = [];
+  var stepImageFilename = ""; // STEP1で入力したファイル名
+
+  var wrap = document.createElement("div");
+  wrap.style.cssText = "background:#fff;padding:12px";
+
+  // ── APIキー設定エリア ──
+  function renderApiKeySection(container) {
+    var apiKey = getApiKey();
+    var sec = document.createElement("div");
+    sec.style.cssText = "background:#fff8e1;border:1px solid #ffe082;border-radius:8px;padding:10px;margin-bottom:14px";
+    if (apiKey) {
+      sec.innerHTML = "<div style='display:flex;justify-content:space-between;align-items:center'>"
+        + "<span style='font-size:11px;color:#555'>🔑 Claude APIキー: 設定済み</span>"
+        + "<button id='clearApiBtn6' style='font-size:10px;padding:3px 8px;background:#fff;color:#d32f2f;border:0.5px solid #d32f2f;border-radius:4px'>削除</button>"
+        + "</div>";
+      container.appendChild(sec);
+      container.querySelector("#clearApiBtn6").addEventListener("click", function() {
+        if (confirm("APIキーを削除しますか？")) { localStorage.removeItem("gs_claude_api_key"); setTab("c6"); }
+      });
+    } else {
+      sec.innerHTML = "<div style='font-size:11px;font-weight:500;color:#f57f17;margin-bottom:6px'>🔑 Claude APIキーを設定してください</div>"
+        + "<div style='font-size:10px;color:#888;margin-bottom:6px'>キーはこのiPhoneのみに保存されます。外部には送信されません。</div>";
+      var keyInput = document.createElement("input");
+      keyInput.type = "password";
+      keyInput.placeholder = "sk-ant-...";
+      keyInput.style.cssText = "width:100%;font-size:12px;padding:7px 9px;border-radius:6px;border:1px solid #ffe082;margin-bottom:6px;background:#fff;color:#333";
+      sec.appendChild(keyInput);
+      var saveKeyBtn = document.createElement("button");
+      saveKeyBtn.style.cssText = "width:100%;padding:7px;background:#f57f17;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:500";
+      saveKeyBtn.textContent = "保存";
+      saveKeyBtn.addEventListener("click", function() {
+        var k = keyInput.value.trim();
+        if (!k.startsWith("sk-ant-")) { alert("正しいAPIキーを入力してください（sk-ant-で始まります）"); return; }
+        setApiKey(k); setTab("c6");
+      });
+      sec.appendChild(saveKeyBtn);
+      container.appendChild(sec);
+    }
+  }
+
+  // ── タイトル行 ──
+  var titleRow = document.createElement("div");
+  titleRow.style.cssText = "display:flex;justify-content:space-between;align-items:center;margin-bottom:10px";
+  var titleEl = document.createElement("div");
+  titleEl.style.cssText = "font-size:14px;font-weight:500;color:#333";
+  titleEl.textContent = "💀 失敗記録";
+  titleRow.appendChild(titleEl);
+  var newBtn = document.createElement("button");
+  newBtn.style.cssText = "padding:6px 14px;background:#b71c1c;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:500";
+  newBtn.textContent = "+ 新規記録";
+  titleRow.appendChild(newBtn);
+  wrap.appendChild(titleRow);
+
+  renderApiKeySection(wrap);
+
+  // ── 累計損失サマリー ──
+  var failures = loadFailures();
+  if (failures.length > 0) {
+    var totalLoss = 0;
+    for (var i = 0; i < failures.length; i++) totalLoss += parseFloat(failures[i].loss || 0);
+    var summary = document.createElement("div");
+    summary.style.cssText = "background:#ffebee;border-radius:8px;padding:8px 12px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center";
+    summary.innerHTML = "<span style='font-size:11px;color:#555'>" + failures.length + "件の失敗記録</span>"
+      + "<span style='font-size:13px;font-weight:700;color:#c62828'>累計損失: " + totalLoss.toLocaleString() + "万円</span>";
+    wrap.appendChild(summary);
+  }
+
+  // ── 手動入力ボタン ──
+  var manualBtn = document.createElement("button");
+  manualBtn.style.cssText = "width:100%;padding:7px;background:#f5f5f5;color:#555;border:0.5px solid #ddd;border-radius:6px;font-size:11px;margin-bottom:14px";
+  manualBtn.textContent = "手動で入力する（Claudeなし）";
+  manualBtn.addEventListener("click", function() { renderNewForm(null); });
+  wrap.appendChild(manualBtn);
+
+  // ── STEP1: 画像ファイル名入力 ──
+  // stepArea: 新規記録フローのコンテナ（STEP1/2/3を切り替える）
+  var stepArea = document.createElement("div");
+  stepArea.style.cssText = "display:none";
+  wrap.appendChild(stepArea);
+
+  function renderStep1() {
+    stepArea.innerHTML = "";
+    stepArea.style.display = "block";
+    newBtn.style.display = "none";
+    manualBtn.style.display = "none";
+
+    var box = document.createElement("div");
+    box.style.cssText = "background:#fff3f3;border:1.5px solid #ffcdd2;border-radius:10px;padding:12px;margin-bottom:12px";
+
+    var stepLabel = document.createElement("div");
+    stepLabel.style.cssText = "font-size:10px;color:#b71c1c;font-weight:700;letter-spacing:1px;margin-bottom:6px";
+    stepLabel.textContent = "STEP 1 / 3　チャート画像（任意）";
+    box.appendChild(stepLabel);
+
+    var desc = document.createElement("div");
+    desc.style.cssText = "font-size:11px;color:#555;margin-bottom:10px;line-height:1.6";
+    desc.innerHTML = "GitHubの <b>charts/</b> にアップ済みのファイル名を入力してください。<br>スキップしてもOKです。";
+    box.appendChild(desc);
+
+    var fnLabel = document.createElement("div");
+    fnLabel.style.cssText = "font-size:10px;color:#888;margin-bottom:3px";
+    fnLabel.textContent = "ファイル名（例: fut_20260413.PNG）";
+    box.appendChild(fnLabel);
+
+    var fnInput = document.createElement("input");
+    fnInput.type = "text";
+    fnInput.placeholder = "fut_20260413.PNG（空白でスキップ）";
+    fnInput.style.cssText = "width:100%;font-size:13px;padding:7px 9px;border-radius:6px;border:1px solid #ffcdd2;margin-bottom:6px;background:#fff;color:#333";
+    box.appendChild(fnInput);
+
+    // プレビューエリア
+    var prevArea = document.createElement("div");
+    prevArea.style.cssText = "margin-bottom:10px;min-height:0";
+    box.appendChild(prevArea);
+
+    fnInput.addEventListener("input", function() {
+      prevArea.innerHTML = "";
+      var fn = fnInput.value.trim();
+      if (!fn) return;
+      var src = CHARTS_BASE + fn;
+      var pWrap = document.createElement("div");
+      pWrap.style.cssText = "display:flex;align-items:center;gap:8px;padding:6px;background:#f5f5f5;border-radius:6px";
+      var pImg = document.createElement("img");
+      pImg.src = src;
+      pImg.style.cssText = "width:80px;height:58px;object-fit:cover;border-radius:5px;border:1px solid #bbb;cursor:pointer";
+      pImg.addEventListener("click", function() { openImgModal(src); });
+      var pStatus = document.createElement("div");
+      pStatus.style.cssText = "font-size:10px;color:#555";
+      pStatus.textContent = "プレビュー読み込み中...";
+      pImg.addEventListener("load", function() {
+        pStatus.style.color = "#388e3c";
+        pStatus.textContent = "✓ 画像確認OK\nタップで拡大";
+        pStatus.style.whiteSpace = "pre-line";
+      });
+      pImg.addEventListener("error", function() {
+        pImg.style.display = "none";
+        pStatus.style.color = "#d32f2f";
+        pStatus.textContent = "⚠ 画像が見つかりません";
+      });
+      pWrap.appendChild(pImg);
+      pWrap.appendChild(pStatus);
+      prevArea.appendChild(pWrap);
+    });
+
+    var btnRow = document.createElement("div");
+    btnRow.style.cssText = "display:flex;gap:6px;margin-top:4px";
+
+    var nextBtn = document.createElement("button");
+    nextBtn.style.cssText = "flex:1;padding:9px;background:#b71c1c;color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:500";
+    nextBtn.textContent = "次へ → Claudeと振り返る";
+    nextBtn.addEventListener("click", function() {
+      stepImageFilename = fnInput.value.trim();
+      currentChatMessages = [];
+      renderStep2();
+    });
+    btnRow.appendChild(nextBtn);
+
+    var cancelBtn = document.createElement("button");
+    cancelBtn.style.cssText = "padding:9px 14px;background:#f5f5f5;color:#555;border:0.5px solid #ddd;border-radius:6px;font-size:12px";
+    cancelBtn.textContent = "キャンセル";
+    cancelBtn.addEventListener("click", function() {
+      stepArea.style.display = "none";
+      stepArea.innerHTML = "";
+      newBtn.style.display = "";
+      manualBtn.style.display = "";
+    });
+    btnRow.appendChild(cancelBtn);
+
+    box.appendChild(btnRow);
+    stepArea.appendChild(box);
+  }
+
+  // ── STEP2: Claudeチャット ──
+  function renderStep2() {
+    stepArea.innerHTML = "";
+
+    var stepLabel = document.createElement("div");
+    stepLabel.style.cssText = "font-size:10px;color:#b71c1c;font-weight:700;letter-spacing:1px;margin-bottom:8px";
+    stepLabel.textContent = "STEP 2 / 3　Claudeと振り返り";
+    stepArea.appendChild(stepLabel);
+
+    // 画像表示（あれば）
+    if (stepImageFilename) {
+      var imgRow = document.createElement("div");
+      imgRow.style.cssText = "display:flex;align-items:center;gap:8px;margin-bottom:10px;padding:7px;background:#f5f5f5;border-radius:6px";
+      var thumbImg = document.createElement("img");
+      thumbImg.src = CHARTS_BASE + stepImageFilename;
+      thumbImg.style.cssText = "width:64px;height:46px;object-fit:cover;border-radius:5px;border:1px solid #bbb;cursor:pointer";
+      thumbImg.addEventListener("click", function() { openImgModal(CHARTS_BASE + stepImageFilename); });
+      thumbImg.addEventListener("error", function() { thumbImg.style.display = "none"; });
+      imgRow.appendChild(thumbImg);
+      var imgName = document.createElement("div");
+      imgName.style.cssText = "font-size:10px;color:#555";
+      imgName.textContent = "📷 " + stepImageFilename;
+      imgRow.appendChild(imgName);
+      stepArea.appendChild(imgRow);
+    }
+
+    // メッセージエリア
+    var msgArea = document.createElement("div");
+    msgArea.style.cssText = "display:flex;flex-direction:column;gap:8px;height:340px;overflow-y:auto;padding:10px;background:#f9f9f9;border:0.5px solid #e0e0e0;border-radius:8px;margin-bottom:8px";
+    stepArea.appendChild(msgArea);
+
+    // 入力エリア
+    var inputRow = document.createElement("div");
+    inputRow.style.cssText = "display:flex;gap:6px;margin-bottom:8px";
+    var userInput = document.createElement("textarea");
+    userInput.rows = 2;
+    userInput.placeholder = "メッセージを入力...";
+    userInput.style.cssText = "flex:1;font-size:12px;padding:7px 9px;border-radius:6px;border:0.5px solid #ddd;background:#fff;color:#333;resize:none";
+    var sendBtn = document.createElement("button");
+    sendBtn.style.cssText = "padding:0 14px;background:#1565c0;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:500;align-self:flex-end;height:36px";
+    sendBtn.textContent = "送信";
+    inputRow.appendChild(userInput);
+    inputRow.appendChild(sendBtn);
+    stepArea.appendChild(inputRow);
+
+    // まとめボタン（最初は非表示）
+    var summarizeBtn = document.createElement("button");
+    summarizeBtn.style.cssText = "width:100%;padding:9px;background:#388e3c;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:500;margin-bottom:8px;display:none";
+    summarizeBtn.textContent = "📝 この内容で記録にまとめる";
+    stepArea.appendChild(summarizeBtn);
+
+    var backBtn2 = document.createElement("button");
+    backBtn2.style.cssText = "width:100%;padding:7px;background:#f5f5f5;color:#555;border:0.5px solid #ddd;border-radius:6px;font-size:11px;margin-bottom:8px";
+    backBtn2.textContent = "← STEP1に戻る";
+    backBtn2.addEventListener("click", renderStep1);
+    stepArea.appendChild(backBtn2);
+
+    // バブル追加
+    function addMessage(role, text) {
+      var isUser = role === "user";
+      var bubble = document.createElement("div");
+      bubble.style.cssText = "max-width:88%;padding:8px 11px;border-radius:10px;font-size:12px;line-height:1.6;white-space:pre-wrap;"
+        + (isUser
+          ? "align-self:flex-end;background:#1565c0;color:#fff;border-bottom-right-radius:2px"
+          : "align-self:flex-start;background:#fff;color:#333;border:0.5px solid #ddd;border-bottom-left-radius:2px");
+      bubble.textContent = text;
+      msgArea.appendChild(bubble);
+      msgArea.scrollTop = msgArea.scrollHeight;
+    }
+
+    function addThinking() {
+      var bubble = document.createElement("div");
+      bubble.style.cssText = "align-self:flex-start;background:#fff;color:#999;border:0.5px solid #ddd;border-radius:10px;border-bottom-left-radius:2px;padding:8px 11px;font-size:12px";
+      bubble.textContent = "考え中...";
+      msgArea.appendChild(bubble);
+      msgArea.scrollTop = msgArea.scrollHeight;
+      return bubble;
+    }
+
+    async function sendMessage(userText) {
+      if (!userText.trim()) return;
+      addMessage("user", userText);
+      currentChatMessages.push({role:"user", content:userText});
+      userInput.value = "";
+      sendBtn.disabled = true;
+      var thinking = addThinking();
+
+      var systemPrompt = "あなたは投資トレーダーの振り返りコーチです。日本語で会話してください。\n"
+        + "以下の4つの観点を順番に深掘りしながら対話してください：\n"
+        + "①取引のファクトベースの経緯（いつ・何を・いくらで・結果）\n"
+        + "②取引における心理状態の経緯（その時何を感じ・考えていたか）\n"
+        + "③本来どう判断すべきであったか（客観的な正解）\n"
+        + "④それを妨げた心理状態への対策案（具体的なルールや仕組み）\n\n"
+        + "まだ話されていない観点があれば自然に質問してください。\n"
+        + "十分に話し合えたと思ったら「内容をまとめましょうか？」と提案してください。\n"
+        + "返答は簡潔に、スマホ画面で読みやすい長さにしてください。";
+
+      // メッセージ構築（画像あれば最初のユーザーメッセージに付与）
+      var apiMessages;
+      if (stepImageFilename && currentChatMessages.length === 1) {
+        // 初回のみ画像をBase64で送る
+        try {
+          var imgData = await fetchImageAsBase64(stepImageFilename);
+          apiMessages = [{
+            role: "user",
+            content: [
+              { type: "image", source: { type: "base64", media_type: imgData.mediaType, data: imgData.b64 } },
+              { type: "text", text: userText }
+            ]
+          }];
+          // 以降のAPIコール用にテキストのみ保持（Base64は毎回送らない）
+        } catch(e) {
+          // 画像取得失敗でもチャットは続行
+          console.log("画像取得失敗:", e.message);
+          apiMessages = currentChatMessages.slice();
+        }
+      } else {
+        apiMessages = currentChatMessages.slice();
+      }
+
+      try {
+        var res = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": getApiKey(),
+            "anthropic-version": "2023-06-01",
+            "anthropic-dangerous-direct-browser-access": "true"
+          },
+          body: JSON.stringify({
+            model: "claude-sonnet-4-20250514",
+            max_tokens: 1000,
+            system: systemPrompt,
+            messages: apiMessages
+          })
+        });
+        var data = await res.json();
+        thinking.remove();
+        var reply = (data.content && data.content[0]) ? data.content[0].text : "エラーが発生しました";
+        addMessage("assistant", reply);
+        currentChatMessages.push({role:"assistant", content:reply});
+        // 3往復以上でまとめボタン表示
+        if (currentChatMessages.length >= 6) summarizeBtn.style.display = "block";
+      } catch(e) {
+        thinking.remove();
+        addMessage("assistant", "エラー: " + e.message + "\nAPIキーを確認してください。");
+      }
+      sendBtn.disabled = false;
+    }
+
+    sendBtn.addEventListener("click", function() { sendMessage(userInput.value); });
+    userInput.addEventListener("keydown", function(e) {
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(userInput.value); }
+    });
+
+    // まとめ処理 → STEP3へ
+    summarizeBtn.addEventListener("click", async function() {
+      summarizeBtn.disabled = true;
+      summarizeBtn.textContent = "まとめ中...";
+
+      var summaryPrompt = "これまでの会話を以下のJSON形式でまとめてください。他のテキストは不要です：\n"
+        + '{"tradeDate":"取引期間（例:2026/4/9〜4/13）","what":"何をしたか（例:日経ラージ売り）","loss":"損益（万円、損失はマイナス、例:-350）","tags":["タグ1","タグ2"],"facts":"①ファクトの経緯（200字以内）","psychology":"②心理状態の経緯（200字以内）","ideal":"③本来の判断（200字以内）","strategy":"④対策案（200字以内）"}\n'
+        + "tagsは次から選択:ルール違反,損切り遅れ,利確遅れ,逆張り,過信,ナンピン,その他";
+
+      var msgs = currentChatMessages.concat([{role:"user", content:summaryPrompt}]);
+      try {
+        var res = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": getApiKey(),
+            "anthropic-version": "2023-06-01",
+            "anthropic-dangerous-direct-browser-access": "true"
+          },
+          body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 1000, messages: msgs })
+        });
+        var data = await res.json();
+        var raw = (data.content && data.content[0]) ? data.content[0].text : "{}";
+        var clean = raw.replace(/```json|```/g, "").trim();
+        var parsed = JSON.parse(clean);
+        parsed._chartImage = stepImageFilename; // 画像ファイル名を引き継ぐ
+        renderStep3(parsed);
+      } catch(e) {
+        summarizeBtn.disabled = false;
+        summarizeBtn.textContent = "📝 この内容で記録にまとめる";
+        alert("まとめに失敗しました: " + e.message);
+      }
+    });
+
+    // Claudeからの最初のメッセージ
+    var firstMsg = "失敗した取引について振り返りましょう。\n\nまず、**①ファクトの経緯**を教えてください。\nいつ、何を、どのタイミングでエントリー・決済しましたか？";
+    addMessage("assistant", firstMsg);
+    currentChatMessages.push({role:"assistant", content:firstMsg});
+  }
+
+  // ── STEP3: まとめ確認・保存 ──
+  function renderStep3(pf) {
+    stepArea.innerHTML = "";
+
+    var stepLabel = document.createElement("div");
+    stepLabel.style.cssText = "font-size:10px;color:#b71c1c;font-weight:700;letter-spacing:1px;margin-bottom:8px";
+    stepLabel.textContent = "STEP 3 / 3　内容を確認して保存";
+    stepArea.appendChild(stepLabel);
+
+    renderNewForm(pf);
+  }
+
+  // ── 新規フォーム（Claude整理後 or 手動入力）──
+  function renderNewForm(pf) {
+    var p = pf || {};
+    var formWrap = document.createElement("div");
+    formWrap.style.cssText = "background:#fff3f3;border:1.5px solid #ffcdd2;border-radius:10px;padding:12px;margin-bottom:14px";
+
+    var fTitle = document.createElement("div");
+    fTitle.style.cssText = "font-size:12px;font-weight:500;color:#b71c1c;margin-bottom:10px";
+    fTitle.textContent = "💀 失敗記録を保存";
+    formWrap.appendChild(fTitle);
+
+    function makeLbl(txt) {
+      var l = document.createElement("div");
+      l.style.cssText = "font-size:11px;color:#888;margin-bottom:3px;margin-top:8px";
+      l.textContent = txt; return l;
+    }
+    function makeInput(type, val, ph) {
+      var el = document.createElement("input");
+      el.type = type; el.value = val || ""; if(ph) el.placeholder = ph;
+      el.style.cssText = "width:100%;font-size:12px;padding:7px 9px;border-radius:6px;border:0.5px solid #ddd;background:#fff;color:#333";
+      return el;
+    }
+    function makeTA(val, rows) {
+      var el = document.createElement("textarea");
+      el.rows = rows || 3; el.value = val || "";
+      el.style.cssText = "width:100%;font-size:12px;padding:7px 9px;border-radius:6px;border:0.5px solid #ddd;background:#fff;color:#333;resize:none";
+      return el;
+    }
+
+    formWrap.appendChild(makeLbl("取引期間"));
+    var dateIn = makeInput("text", p.tradeDate || "", "例: 2026/4/9〜4/13");
+    formWrap.appendChild(dateIn);
+
+    formWrap.appendChild(makeLbl("何をしたか"));
+    var whatIn = makeInput("text", p.what || "", "例: 日経ラージ 売り5枚");
+    formWrap.appendChild(whatIn);
+
+    formWrap.appendChild(makeLbl("損益（万円）※損失はマイナス"));
+    var lossIn = makeInput("number", p.loss || "", "例: -350");
+    formWrap.appendChild(lossIn);
+
+    formWrap.appendChild(makeLbl("失敗の分類（複数選択可）"));
+    var tagWrap = document.createElement("div");
+    tagWrap.style.cssText = "display:flex;flex-wrap:wrap;gap:5px;margin-bottom:4px";
+    var selectedTags = (p.tags || []).slice();
+    FAILURE_TAGS.forEach(function(tag, ti) {
+      var btn = document.createElement("button");
+      var active = selectedTags.indexOf(tag) >= 0;
+      btn.style.cssText = "padding:4px 10px;border-radius:20px;font-size:11px;border:1.5px solid " + FAILURE_TAG_COLORS[ti] + ";background:" + (active ? FAILURE_TAG_COLORS[ti] : "#fff") + ";color:" + (active ? "#fff" : FAILURE_TAG_COLORS[ti]);
+      btn.textContent = tag;
+      btn.addEventListener("click", function() {
+        var idx2 = selectedTags.indexOf(tag);
+        if (idx2 >= 0) { selectedTags.splice(idx2, 1); btn.style.background = "#fff"; btn.style.color = FAILURE_TAG_COLORS[ti]; }
+        else { selectedTags.push(tag); btn.style.background = FAILURE_TAG_COLORS[ti]; btn.style.color = "#fff"; }
+      });
+      tagWrap.appendChild(btn);
+    });
+    formWrap.appendChild(tagWrap);
+
+    formWrap.appendChild(makeLbl("① ファクトの経緯"));
+    var factsTA = makeTA(p.facts || "", 4);
+    formWrap.appendChild(factsTA);
+
+    formWrap.appendChild(makeLbl("② 心理状態の経緯"));
+    var psychTA = makeTA(p.psychology || "", 4);
+    formWrap.appendChild(psychTA);
+
+    formWrap.appendChild(makeLbl("③ 本来の判断"));
+    var idealTA = makeTA(p.ideal || "", 3);
+    formWrap.appendChild(idealTA);
+
+    formWrap.appendChild(makeLbl("④ 対策案"));
+    var stratTA = makeTA(p.strategy || "", 3);
+    formWrap.appendChild(stratTA);
+
+    formWrap.appendChild(makeLbl("チャート画像ファイル名"));
+    var imgIn = makeInput("text", p._chartImage || "", "例: fut_20260413.PNG");
+    formWrap.appendChild(imgIn);
+
+    var prevArea2 = document.createElement("div");
+    prevArea2.style.cssText = "margin-top:5px;min-height:0";
+    formWrap.appendChild(prevArea2);
+
+    // 画像名があれば即プレビュー表示
+    if (imgIn.value) {
+      var src0 = CHARTS_BASE + imgIn.value;
+      var pi0 = document.createElement("img");
+      pi0.src = src0;
+      pi0.style.cssText = "width:80px;height:58px;object-fit:cover;border-radius:5px;border:1px solid #bbb;cursor:pointer;margin-top:4px";
+      pi0.addEventListener("click", function() { openImgModal(src0); });
+      pi0.addEventListener("error", function() { pi0.style.opacity = "0.3"; });
+      prevArea2.appendChild(pi0);
+    }
+
+    imgIn.addEventListener("input", function() {
+      prevArea2.innerHTML = "";
+      var fn = imgIn.value.trim();
+      if (!fn) return;
+      var src = CHARTS_BASE + fn;
+      var pImg = document.createElement("img");
+      pImg.src = src;
+      pImg.style.cssText = "width:80px;height:58px;object-fit:cover;border-radius:5px;border:1px solid #bbb;cursor:pointer;margin-top:4px";
+      pImg.addEventListener("click", function() { openImgModal(src); });
+      pImg.addEventListener("error", function() { pImg.style.opacity = "0.3"; });
+      prevArea2.appendChild(pImg);
+    });
+
+    var btnRow = document.createElement("div");
+    btnRow.style.cssText = "display:flex;gap:6px;margin-top:12px";
+    var saveBtn2 = document.createElement("button");
+    saveBtn2.style.cssText = "flex:1;padding:8px;background:#b71c1c;color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:500";
+    saveBtn2.textContent = "保存";
+    saveBtn2.addEventListener("click", function() {
+      var fs = loadFailures();
+      var nextId = fs.length > 0 ? Math.max.apply(null, fs.map(function(f){return f.id||0;})) + 1 : 1;
+      fs.push({
+        id: nextId,
+        created: new Date().toISOString().slice(0,10),
+        tradeDate: dateIn.value,
+        what: whatIn.value,
+        loss: lossIn.value,
+        tags: selectedTags.slice(),
+        facts: factsTA.value,
+        psychology: psychTA.value,
+        ideal: idealTA.value,
+        strategy: stratTA.value,
+        chartImage: imgIn.value.trim()
+      });
+      saveFailures(fs);
+      setTab("c6");
+    });
+    btnRow.appendChild(saveBtn2);
+    var cancelBtn2 = document.createElement("button");
+    cancelBtn2.style.cssText = "padding:8px 14px;background:#f5f5f5;color:#555;border:0.5px solid #ddd;border-radius:6px;font-size:12px";
+    cancelBtn2.textContent = "キャンセル";
+    cancelBtn2.addEventListener("click", function() {
+      stepArea.style.display = "none";
+      stepArea.innerHTML = "";
+      newBtn.style.display = "";
+      manualBtn.style.display = "";
+      formWrap.remove();
+    });
+    btnRow.appendChild(cancelBtn2);
+    formWrap.appendChild(btnRow);
+
+    // STEP3経由（stepArea使用中）の場合はstepAreaに、手動の場合はwrapに挿入
+    if (stepArea.style.display !== "none") {
+      stepArea.appendChild(formWrap);
+    } else {
+      wrap.insertBefore(formWrap, manualBtn.nextSibling);
+    }
+  }
+
+  // 新規ボタン → STEP1開始
+  newBtn.addEventListener("click", function() {
+    if (!getApiKey()) {
+      alert("まずAPIキーを設定してください");
+      return;
+    }
+    renderStep1();
+    stepArea.scrollIntoView({behavior:"smooth"});
+  });
+
+  // ── 失敗記録一覧 ──
+  var failures2 = loadFailures();
+  if (!failures2.length) {
+    var empty = document.createElement("div");
+    empty.style.cssText = "color:#aaa;font-size:12px;text-align:center;padding:24px 0";
+    empty.textContent = "まだ記録がありません";
+    wrap.appendChild(empty);
+  }
+
+  for (var fi = failures2.length - 1; fi >= 0; fi--) {
+    (function(f, fidx) {
+      var lossNum = parseFloat(f.loss || 0);
+      var isLoss = lossNum < 0;
+      var card2 = document.createElement("div");
+      card2.id = "failure-" + String(f.id).padStart(3,"0");
+      card2.style.cssText = "border:1.5px solid " + (isLoss?"#ffcdd2":"#c8e6c9") + ";border-radius:8px;padding:10px;margin-bottom:10px;background:" + (isLoss?"#fff8f8":"#f9fff9");
+
+      var fHead = document.createElement("div");
+      fHead.style.cssText = "display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;flex-wrap:wrap;gap:4px";
+      var fLeft = document.createElement("div");
+      fLeft.innerHTML = "<span style='font-size:11px;background:#eee;border-radius:4px;padding:2px 7px;color:#555;font-weight:500'>#" + String(f.id).padStart(3,"0") + "</span> "
+        + "<span style='font-size:11px;color:#888'>" + (f.tradeDate || f.created) + "</span>";
+      fHead.appendChild(fLeft);
+      var fLoss = document.createElement("span");
+      fLoss.style.cssText = "font-size:13px;font-weight:700;color:" + (isLoss?"#c62828":"#2e7d32");
+      fLoss.textContent = (lossNum >= 0 ? "+" : "") + lossNum.toLocaleString() + "万円";
+      fHead.appendChild(fLoss);
+      card2.appendChild(fHead);
+
+      if (f.tags && f.tags.length) {
+        var tagRow = document.createElement("div");
+        tagRow.style.cssText = "display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px";
+        f.tags.forEach(function(tag) {
+          var ti = FAILURE_TAGS.indexOf(tag);
+          var color = ti >= 0 ? FAILURE_TAG_COLORS[ti] : "#555";
+          tagRow.innerHTML += "<span style='font-size:10px;padding:2px 8px;border-radius:20px;background:" + color + ";color:#fff'>" + tag + "</span>";
+        });
+        card2.appendChild(tagRow);
+      }
+
+      if (f.what) {
+        var whatDiv = document.createElement("div");
+        whatDiv.style.cssText = "font-size:12px;font-weight:500;color:#333;margin-bottom:6px";
+        whatDiv.textContent = f.what;
+        card2.appendChild(whatDiv);
+      }
+
+      var sections = [
+        {label:"① ファクトの経緯", val:f.facts, color:"#1565c0"},
+        {label:"② 心理状態の経緯", val:f.psychology, color:"#6a1b9a"},
+        {label:"③ 本来の判断", val:f.ideal, color:"#2e7d32"},
+        {label:"④ 対策案", val:f.strategy, color:"#e65100"}
+      ];
+      sections.forEach(function(sec2) {
+        if (!sec2.val) return;
+        var secDiv = document.createElement("div");
+        secDiv.style.cssText = "margin-bottom:5px";
+        var secHdr = document.createElement("div");
+        secHdr.style.cssText = "font-size:10px;font-weight:700;color:" + sec2.color + ";margin-bottom:2px";
+        secHdr.textContent = sec2.label;
+        var secBody = document.createElement("div");
+        secBody.style.cssText = "font-size:11px;color:#555;background:#f5f5f5;border-radius:5px;padding:6px 8px;line-height:1.6;white-space:pre-wrap";
+        secBody.textContent = sec2.val;
+        secDiv.appendChild(secHdr);
+        secDiv.appendChild(secBody);
+        card2.appendChild(secDiv);
+      });
+
+      if (f.chartImage) {
+        var src2 = CHARTS_BASE + f.chartImage;
+        var imgWrap2 = document.createElement("div");
+        imgWrap2.style.cssText = "margin-top:6px";
+        var cImg = document.createElement("img");
+        cImg.src = src2;
+        cImg.style.cssText = "width:80px;height:58px;object-fit:cover;border-radius:5px;border:1px solid #bbb;cursor:pointer";
+        cImg.addEventListener("click", function() { openImgModal(src2); });
+        cImg.addEventListener("error", function() { cImg.style.display = "none"; });
+        imgWrap2.appendChild(cImg);
+        card2.appendChild(imgWrap2);
+      }
+
+      var fDelBtn = document.createElement("button");
+      fDelBtn.style.cssText = "margin-top:8px;padding:5px 12px;font-size:10px;border-radius:5px;background:#fff;color:#d32f2f;border:0.5px solid #d32f2f";
+      fDelBtn.textContent = "削除";
+      fDelBtn.addEventListener("click", function() {
+        if (!confirm("この記録を削除しますか？")) return;
+        var fs2 = loadFailures(); fs2.splice(fidx, 1); saveFailures(fs2); setTab("c6");
+      });
+      card2.appendChild(fDelBtn);
+
+      wrap.appendChild(card2);
+    })(failures2[fi], fi);
+  }
+
+  return wrap;
+}
+
+// ── タブ切り替え・レンダリング ──
 function setTab(id) { currentTab = id; render(); }
 
 function render() {
@@ -1093,7 +1922,6 @@ function render() {
   var root = document.getElementById("root");
   root.innerHTML = "";
 
-  // ヘッダー
   var hdrDiv = document.createElement("div");
   hdrDiv.style.cssText = "text-align:center;margin-bottom:12px";
   hdrDiv.innerHTML = "<div style='font-size:10px;letter-spacing:2px;color:#00d4ff;border:1px solid rgba(0,212,255,0.2);border-radius:20px;display:inline-block;padding:2px 14px;margin-bottom:6px'>GS DERIVATIVES DASHBOARD &middot; JPX自動取得</div>"
@@ -1105,11 +1933,10 @@ function render() {
     + "</div>";
   root.appendChild(hdrDiv);
 
-  // タブ
   var tabRow = document.createElement("div");
   tabRow.style.cssText = "display:flex;gap:4px;margin-bottom:12px;flex-wrap:wrap;align-items:center";
-  var TIDS = ["all","c1","c2","c3","c4","c5"];
-  var TLBS = ["全グラフ","①建玉残高","②取引量","③時系列","④先物建玉","📝記録"];
+  var TIDS = ["all","c1","c2","c3","c4","c5","c6"];
+  var TLBS = ["全グラフ","①建玉残高","②取引量","③時系列","④先物建玉","📝記録","💀失敗記録"];
   for (var i = 0; i < TIDS.length; i++) {
     (function(id, label) {
       var btn = document.createElement("button");
@@ -1127,7 +1954,6 @@ function render() {
   tabRow.appendChild(reloadBtn);
   root.appendChild(tabRow);
 
-  // グリッド
   var grid = document.createElement("div");
   if (currentTab === "all") grid.style.cssText = "display:grid;grid-template-columns:1fr 1fr;gap:12px";
 
@@ -1169,7 +1995,22 @@ function render() {
     grid.appendChild(c5card);
   }
 
+  if (currentTab === "c6") {
+    var c6card = document.createElement("div");
+    c6card.className = "card";
+    try { c6card.appendChild(buildChart6()); }
+    catch(e) { c6card.innerHTML = "<div style='padding:12px;color:red;background:#fff'>Error: " + e.message + "</div>"; }
+    grid.appendChild(c6card);
+  }
+
   root.appendChild(grid);
+
+  if (currentTab === "c5" && location.hash) {
+    setTimeout(function() {
+      var el = document.getElementById(location.hash.slice(1));
+      if (el) el.scrollIntoView({behavior:"smooth", block:"start"});
+    }, 100);
+  }
 
   var footer = document.createElement("div");
   footer.style.cssText = "text-align:center;color:#2a4060;font-size:9px;margin-top:12px";
@@ -1180,7 +2021,11 @@ function render() {
 render(true, "");
 fetch(JSON_URL + "?t=" + Date.now())
   .then(function(r) { return r.json(); })
-  .then(function(j) { liveData = j; render(false, j.updated || ""); })
+  .then(function(j) {
+    liveData = j;
+    if (location.hash && location.hash.startsWith("#record-")) currentTab = "c5";
+    render(false, j.updated || "");
+  })
   .catch(function(e) { console.log("fetch error", e); render(false, ""); });
 </script>
 </body>
