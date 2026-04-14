@@ -1501,7 +1501,23 @@ function buildChart6() {
     backBtn2.addEventListener("click", renderStep1);
     stepArea.appendChild(backBtn2);
 
-    // バブル追加
+    // ── 会話履歴の二重管理 ──
+    // apiHistory : API送信専用。必ずuserから始まる交互配列。画像は初回のみ添付。
+    // currentChatMessages : まとめ用のテキスト履歴（userから始まるuser/assistant交互）
+    var apiHistory = [];
+    var imageAttachedToFirst = false;
+
+    var systemPrompt = "あなたは投資トレーダーの振り返りコーチです。日本語で会話してください。\n"
+      + "以下の4つの観点を順番に深掘りしながら対話してください：\n"
+      + "①取引のファクトベースの経緯（いつ・何を・いくらで・結果）\n"
+      + "②取引における心理状態の経緯（その時何を感じ・考えていたか）\n"
+      + "③本来どう判断すべきであったか（客観的な正解）\n"
+      + "④それを妨げた心理状態への対策案（具体的なルールや仕組み）\n\n"
+      + "まだ話されていない観点があれば自然に質問してください。\n"
+      + "十分に話し合えたと思ったら「内容をまとめましょうか？」と提案してください。\n"
+      + "返答は簡潔に、スマホ画面で読みやすい長さにしてください。"
+      + (stepImageFilename ? "\n\nユーザーはチャートの画像を共有しています。最初のメッセージに画像が添付されています。画像からチャートの内容（価格帯、トレンド、エントリー・決済ポイントなど）を読み取って振り返りに活用してください。" : "");
+
     function addMessage(role, text) {
       var isUser = role === "user";
       var bubble = document.createElement("div");
@@ -1526,53 +1542,35 @@ function buildChart6() {
     async function sendMessage(userText) {
       if (!userText.trim()) return;
       addMessage("user", userText);
-      currentChatMessages.push({role:"user", content:userText});
       userInput.value = "";
       sendBtn.disabled = true;
       var thinking = addThinking();
 
-      var systemPrompt = "あなたは投資トレーダーの振り返りコーチです。日本語で会話してください。\n"
-        + "以下の4つの観点を順番に深掘りしながら対話してください：\n"
-        + "①取引のファクトベースの経緯（いつ・何を・いくらで・結果）\n"
-        + "②取引における心理状態の経緯（その時何を感じ・考えていたか）\n"
-        + "③本来どう判断すべきであったか（客観的な正解）\n"
-        + "④それを妨げた心理状態への対策案（具体的なルールや仕組み）\n\n"
-        + "まだ話されていない観点があれば自然に質問してください。\n"
-        + "十分に話し合えたと思ったら「内容をまとめましょうか？」と提案してください。\n"
-        + "返答は簡潔に、スマホ画面で読みやすい長さにしてください。"
-        + (stepImageFilename ? "\n\nユーザーはチャートの画像を共有しています。最初のメッセージに画像が添付されています。画像からチャートの内容（価格帯、トレンド、エントリー・決済ポイントなど）を読み取って振り返りに活用してください。" : "");
-
-      // メッセージ構築
-      // APIはuser/assistantが必ず交互である必要がある。
-      // currentChatMessages = [assistant挨拶, user, assistant, user, ...]
-      // → APIに渡すのはuserから始まる部分のみ抽出する
-      var apiMessages;
-      // userから始まるメッセージ列を取り出す
-      var userStartIdx = 0;
-      for (var mi = 0; mi < currentChatMessages.length; mi++) {
-        if (currentChatMessages[mi].role === "user") { userStartIdx = mi; break; }
-      }
-      var baseMessages = currentChatMessages.slice(userStartIdx);
-
-      if (stepImageFilename && baseMessages.length === 1) {
-        // 初回ユーザーメッセージのみの場合：画像をBase64で添付して送る
+      // API用メッセージを構築（画像は初回のみ）
+      var newUserMsg;
+      if (stepImageFilename && !imageAttachedToFirst) {
         try {
           var imgData = await fetchImageAsBase64(stepImageFilename);
-          apiMessages = [{
+          newUserMsg = {
             role: "user",
             content: [
               { type: "image", source: { type: "base64", media_type: imgData.mediaType, data: imgData.b64 } },
               { type: "text", text: userText }
             ]
-          }];
+          };
+          imageAttachedToFirst = true;
         } catch(e) {
-          // 画像取得失敗でもチャットは続行
           console.log("画像取得失敗:", e.message);
-          apiMessages = baseMessages;
+          newUserMsg = { role: "user", content: userText };
+          imageAttachedToFirst = true;
         }
       } else {
-        apiMessages = baseMessages;
+        newUserMsg = { role: "user", content: userText };
       }
+
+      // apiHistory & currentChatMessages に追加
+      apiHistory.push(newUserMsg);
+      currentChatMessages.push({ role: "user", content: userText });
 
       try {
         var res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -1587,19 +1585,30 @@ function buildChart6() {
             model: "claude-sonnet-4-20250514",
             max_tokens: 1000,
             system: systemPrompt,
-            messages: apiMessages
+            messages: apiHistory
           })
         });
         var data = await res.json();
         thinking.remove();
-        var reply = (data.content && data.content[0]) ? data.content[0].text : "エラーが発生しました";
+        if (data.error) {
+          var errMsg = "APIエラー: " + (data.error.message || JSON.stringify(data.error));
+          addMessage("assistant", errMsg);
+          apiHistory.pop();
+          currentChatMessages.pop();
+          sendBtn.disabled = false;
+          return;
+        }
+        var reply = (data.content && data.content[0]) ? data.content[0].text : "応答がありませんでした";
         addMessage("assistant", reply);
-        currentChatMessages.push({role:"assistant", content:reply});
-        // 3往復以上でまとめボタン表示
-        if (currentChatMessages.length >= 6) summarizeBtn.style.display = "block";
+        apiHistory.push({ role: "assistant", content: reply });
+        currentChatMessages.push({ role: "assistant", content: reply });
+        // 3往復（6メッセージ）以上でまとめボタン表示
+        if (apiHistory.length >= 6) summarizeBtn.style.display = "block";
       } catch(e) {
         thinking.remove();
-        addMessage("assistant", "エラー: " + e.message + "\nAPIキーを確認してください。");
+        addMessage("assistant", "エラー: " + e.message + "\nAPIキーまたはネットワークを確認してください。");
+        apiHistory.pop();
+        currentChatMessages.pop();
       }
       sendBtn.disabled = false;
     }
@@ -1618,7 +1627,9 @@ function buildChart6() {
         + '{"tradeDate":"取引期間（例:2026/4/9〜4/13）","what":"何をしたか（例:日経ラージ売り）","loss":"損益（万円、損失はマイナス、例:-350）","tags":["タグ1","タグ2"],"facts":"①ファクトの経緯（200字以内）","psychology":"②心理状態の経緯（200字以内）","ideal":"③本来の判断（200字以内）","strategy":"④対策案（200字以内）"}\n'
         + "tagsは次から選択:ルール違反,損切り遅れ,利確遅れ,逆張り,過信,ナンピン,その他";
 
-      var msgs = currentChatMessages.concat([{role:"user", content:summaryPrompt}]);
+      // まとめはテキストのみのcurrentChatMessages（userから始まる）＋まとめ指示
+      var summaryMessages = currentChatMessages.concat([{ role: "user", content: summaryPrompt }]);
+
       try {
         var res = await fetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
@@ -1628,13 +1639,13 @@ function buildChart6() {
             "anthropic-version": "2023-06-01",
             "anthropic-dangerous-direct-browser-access": "true"
           },
-          body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 1000, messages: msgs })
+          body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 1000, messages: summaryMessages })
         });
         var data = await res.json();
         var raw = (data.content && data.content[0]) ? data.content[0].text : "{}";
         var clean = raw.replace(/```json|```/g, "").trim();
         var parsed = JSON.parse(clean);
-        parsed._chartImage = stepImageFilename; // 画像ファイル名を引き継ぐ
+        parsed._chartImage = stepImageFilename;
         renderStep3(parsed);
       } catch(e) {
         summarizeBtn.disabled = false;
@@ -1643,10 +1654,11 @@ function buildChart6() {
       }
     });
 
-    // Claudeからの最初のメッセージ
-    var firstMsg = "失敗した取引について振り返りましょう。\n\nまず、**①ファクトの経緯**を教えてください。\nいつ、何を、どのタイミングでエントリー・決済しましたか？";
+    // Claudeからの最初のメッセージ（表示のみ・API履歴には含めない）
+    var firstMsg = "失敗した取引について振り返りましょう。\n\nまず、①ファクトの経緯を教えてください。\nいつ、何を、どのタイミングでエントリー・決済しましたか？"
+      + (stepImageFilename ? "\n\n画像も添付して送ってもらえると、チャートを見ながら振り返れます。" : "");
     addMessage("assistant", firstMsg);
-    currentChatMessages.push({role:"assistant", content:firstMsg});
+    // ※ firstMsg はAPIに送らない（userから始まる履歴を保つため）
   }
 
   // ── STEP3: まとめ確認・保存 ──
