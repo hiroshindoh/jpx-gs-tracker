@@ -30,8 +30,23 @@ textarea,input,select{font-family:inherit}
 <script>
 var JSON_URL = "https://hiroshindoh.github.io/jpx-gs-tracker/gs_data.json";
 var CHARTS_BASE = "https://hiroshindoh.github.io/jpx-gs-tracker/charts/";
-var BUY = "#1976d2", SELL = "#d32f2f", ATM_LINE = 54000;
+var BUY = "#1976d2", SELL = "#d32f2f";
 var liveData = null, currentTab = "all";
+
+// ATM_LINE: 最新建玉ストライクの中央値から動的計算
+function calcAtmLine(oiData) {
+  var all = oiData && oiData.strikes && oiData.strikes.all;
+  if (all && all.length > 0) {
+    var sorted = all.slice().sort(function(a,b){return a-b;});
+    return sorted[Math.floor(sorted.length / 2)];
+  }
+  var gs = oiData && oiData.gs;
+  if (gs && gs.length > 0) {
+    var strikes = gs.map(function(d){return d.strike;}).sort(function(a,b){return a-b;});
+    return strikes[Math.floor(strikes.length / 2)];
+  }
+  return 54000;
+}
 
 var FALLBACK = {date:"2026-03-13",gs:[
   {strike:54000,type:"CALL",side:"Buy",qty:150},
@@ -134,6 +149,7 @@ function buildChart1() {
 
   var oldSnaps = [];
   for (var i = 0; i < snaps.length; i++) { if (!snaps[i].isCur) oldSnaps.push(snaps[i]); }
+  var ATM_LINE = calcAtmLine(cur);
 
   var ct = 0, pt = 0;
   var ks = Object.keys(curSnap.map);
@@ -198,8 +214,8 @@ function buildChart1() {
     if (snaps[i].strikes && snaps[i].strikes.max) dynMax = Math.max(dynMax, snaps[i].strikes.max);
   }
   var MARGIN = 1500;
-  if (dynMin === 99999999) dynMin = 51000;
-  if (dynMax === 0) dynMax = 57000;
+  if (dynMin === 99999999) dynMin = (cur.strikes && cur.strikes.min) ? cur.strikes.min - 1500 : 51000;
+  if (dynMax === 0) dynMax = (cur.strikes && cur.strikes.max) ? cur.strikes.max + 1500 : 57000;
   dynMin = Math.floor((dynMin - MARGIN) / 125) * 125;
   dynMax = Math.ceil((dynMax + MARGIN) / 125) * 125;
   var allS = [];
