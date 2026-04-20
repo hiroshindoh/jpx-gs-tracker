@@ -83,32 +83,58 @@ def parse_fut_oi(raw):
     wb = openpyxl.load_workbook(BytesIO(raw), read_only=True, data_only=True)
     ws = wb.active
     rows = list(ws.iter_rows(values_only=True))
-    section = ""
-    result = {}
+
+    # セクション判定：全角山括弧を含む見出し行を正しく識別
+    SECTION_KEYWORDS = {
+        "日経225先物": "NK225",
+        "日経225mini": "MINI",
+        "TOPIX先物":   "TOPIX",
+    }
     month_map = {"04月": "2604", "05月": "2605", "06月": "2606", "09月": "2609"}
-    section_map = {"日経225先物": "NK225", "日経225mini": "MINI", "TOPIX先物": "TOPIX"}
+
+    result = {}
+    section = ""
+
     for row in rows:
         row = list(row)
-        if row[0] and "先物" in str(row[0]):
-            for k, v in section_map.items():
-                if k in str(row[0]):
-                    section = v
-                    break
+        cell0 = str(row[0] or "")
+
+        # セクション見出し行の判定（全角括弧対応）
+        matched_section = ""
+        for keyword, prefix in SECTION_KEYWORDS.items():
+            if keyword in cell0:
+                matched_section = prefix
+                break
+        if matched_section:
+            section = matched_section
+            print(f"セクション: {section} ({cell0.strip()})")
             continue
+
         if not section or len(row) < 8:
             continue
-        month_str = str(row[1] or "")
-        month_key = None
-        for m, k in month_map.items():
-            if m in month_str:
-                month_key = k
-                break
-        if month_key:
-            key = section + "_" + month_key
-            if TARGET in str(row[3] or ""):
-                result[key] = -int(row[4] or 0)
-            if TARGET in str(row[6] or ""):
-                result[key] = int(row[7] or 0)
+
+        # 左側ブロック（売超・買超）
+        for sell_col, name_col, buy_col, buy_name_col, month_col in [
+            (4, 3, 7, 6, 1),    # 左ブロック
+        ]:
+            month_str = str(row[month_col] or "")
+            month_key = None
+            for m, k in month_map.items():
+                if m in month_str:
+                    month_key = k
+                    break
+            if month_key:
+                key = section + "_" + month_key
+                if TARGET in str(row[name_col] or ""):
+                    val = int(row[sell_col] or 0)
+                    result[key] = result.get(key, 0) - val  # 売超はマイナス
+                    print(f"  売超: {key} = -{val}")
+                if TARGET in str(row[buy_name_col] or ""):
+                    val = int(row[buy_col] or 0)
+                    result[key] = result.get(key, 0) + val  # 買超はプラス
+                    print(f"  買超: {key} = +{val}")
+
+        # 右側ブロック（列10-17）
         if len(row) > 16:
             month_str2 = str(row[11] or "")
             month_key2 = None
@@ -119,9 +145,14 @@ def parse_fut_oi(raw):
             if month_key2:
                 key2 = section + "_" + month_key2
                 if TARGET in str(row[13] or ""):
-                    result[key2] = -int(row[14] or 0)
+                    val = int(row[14] or 0)
+                    result[key2] = result.get(key2, 0) - val  # 売超はマイナス
+                    print(f"  売超(右): {key2} = -{val}")
                 if TARGET in str(row[16] or ""):
-                    result[key2] = int(row[17] or 0)
+                    val = int(row[17] or 0)
+                    result[key2] = result.get(key2, 0) + val  # 買超はプラス
+                    print(f"  買超(右): {key2} = +{val}")
+
     return result
 
 def parse_vol(raw, date_str):
@@ -206,11 +237,15 @@ def main():
                 "all": all_strikes
             }
         }
+        # gs_dataが空でも strikes は更新するが、oi_history には gs がある場合のみ追加
         oi_history = [h for h in oi_history if h["date"] != date_str]
-        oi_history.append(new_entry)
-        oi_history.sort(key=lambda x: x["date"])
+        if oi_data:
+            oi_history.append(new_entry)
+            oi_history.sort(key=lambda x: x["date"])
     else:
         oi_data, all_strikes = [], []
+        new_entry = existing.get("oi", {})
+        date_str = new_entry.get("date", date_str)
         print("オプション建玉残高: 取得失敗")
 
     # ── 先物建玉残高（週次）──
@@ -263,18 +298,23 @@ def main():
     if history_day and vol_date:
         history[vol_date] = history_day
 
+    # oi の最新エントリ：gs があれば最新のもの、なければ既存を維持
+    latest_oi = new_entry if oi_data else existing.get("oi", {
+        "date": date_str, "limit_month": get_limit_month(date_str),
+        "gs": [], "strikes": {"min": 0, "max": 0, "all": []}
+    })
+    # ただし strikes は常に最新ファイルから更新
+    if raw_oi and all_strikes:
+        latest_oi["strikes"] = {
+            "min": min(all_strikes),
+            "max": max(all_strikes),
+            "all": all_strikes
+        }
+        latest_oi["date"] = date_str
+
     output = {
         "updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "oi": {
-            "date": date_str,
-            "limit_month": get_limit_month(date_str),
-            "gs": oi_data,
-            "strikes": {
-                "min": min(all_strikes) if all_strikes else 0,
-                "max": max(all_strikes) if all_strikes else 0,
-                "all": all_strikes
-            }
-        },
+        "oi": latest_oi,
         "vol":            {"date": vol_date, "gs": vol_data},
         "history":        history,
         "oi_history":     oi_history,
