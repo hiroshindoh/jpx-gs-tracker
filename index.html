@@ -213,9 +213,12 @@ function buildChart1() {
     if (snaps[i].strikes && snaps[i].strikes.min) dynMin = Math.min(dynMin, snaps[i].strikes.min);
     if (snaps[i].strikes && snaps[i].strikes.max) dynMax = Math.max(dynMax, snaps[i].strikes.max);
   }
+  // cur.strikes（最新週）も必ず範囲に含める（gsが空でもstrikesは更新されているため）
+  if (cur.strikes && cur.strikes.min) dynMin = Math.min(dynMin, cur.strikes.min);
+  if (cur.strikes && cur.strikes.max) dynMax = Math.max(dynMax, cur.strikes.max);
   var MARGIN = 1500;
-  if (dynMin === 99999999) dynMin = (cur.strikes && cur.strikes.min) ? cur.strikes.min - 1500 : 51000;
-  if (dynMax === 0) dynMax = (cur.strikes && cur.strikes.max) ? cur.strikes.max + 1500 : 57000;
+  if (dynMin === 99999999) dynMin = 51000;
+  if (dynMax === 0) dynMax = 57000;
   dynMin = Math.floor((dynMin - MARGIN) / 125) * 125;
   dynMax = Math.ceil((dynMax + MARGIN) / 125) * 125;
   var allS = [];
@@ -450,15 +453,18 @@ function buildChart4HTML() {
   var xMn=aX[0],xMx=aX[0],yMn=aY[0],yMx=aY[0];
   for (var i=1;i<aX.length;i++){xMn=Math.min(xMn,aX[i]);xMx=Math.max(xMx,aX[i]);}
   for (var i=1;i<aY.length;i++){yMn=Math.min(yMn,aY[i]);yMx=Math.max(yMx,aY[i]);}
-  var xP=Math.max((xMx-xMn)*0.2,3000), yP=Math.max((yMx-yMn)*0.2,3000);
-  var X0=xMn-xP, X1=xMx+xP, Y0=yMn-yP, Y1=yMx+yP;
+  // X軸・Y軸のスケールを統一（大きい方の範囲に合わせる）
+  var xRange = Math.max(Math.abs(xMx), Math.abs(xMn));
+  var yRange = Math.max(Math.abs(yMx), Math.abs(yMn));
+  var uniRange = Math.max(xRange, yRange) * 1.2;
+  uniRange = Math.ceil(uniRange / 5000) * 5000; // 5000単位に丸める
+  var X0=-uniRange, X1=uniRange, Y0=-uniRange, Y1=uniRange;
   var W=300,H=240,PL=52,PR=12,PT=18,PB=36,CW=W-PL-PR,CH=H-PT-PB;
   function px(x){return PL+(x-X0)/(X1-X0)*CW;}
   function py(y){return PT+CH-(y-Y0)/(Y1-Y0)*CH;}
   var zx=Math.round(px(0)), zy=Math.round(py(0));
   var stps=[500,1000,2000,5000,10000,20000,50000], xSt=stps[0], ySt=stps[0];
-  for (var i=0;i<stps.length;i++){if((X1-X0)/stps[i]<8){xSt=stps[i];break;}}
-  for (var i=0;i<stps.length;i++){if((Y1-Y0)/stps[i]<8){ySt=stps[i];break;}}
+  for (var i=0;i<stps.length;i++){if((X1-X0)/stps[i]<8){xSt=stps[i];ySt=stps[i];break;}}
   var grid="";
   for (var v=Math.ceil(X0/xSt)*xSt; v<=X1; v+=xSt) {
     var gx=Math.round(px(v));
