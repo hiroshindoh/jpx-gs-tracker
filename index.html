@@ -147,6 +147,20 @@ function buildChart1() {
     isCur: true
   };
 
+  // cur.date が oi_history にない（gsが空で除外）場合でも開示範囲ゾーンをsnapsに追加
+  var curInSnaps = false;
+  for (var i = 0; i < snaps.length; i++) { if (snaps[i].date === cur.date) { curInSnaps = true; break; } }
+  if (!curInSnaps && cur.strikes && cur.strikes.min) {
+    snaps.push({
+      date: cur.date,
+      map: buildSnapshot(cur),
+      strikes: cur.strikes,
+      color: ZCOL[snaps.length] || "#e3f2fd",
+      label: (cur.date && cur.date.length >= 10) ? cur.date.slice(5).replace("-","/") : cur.date,
+      isCur: true
+    });
+  }
+
   var oldSnaps = [];
   for (var i = 0; i < snaps.length; i++) { if (!snaps[i].isCur) oldSnaps.push(snaps[i]); }
   var ATM_LINE = calcAtmLine(cur);
@@ -334,6 +348,12 @@ function buildChart2HTML() {
   for (var i = 0; i < hist2.length; i++) {
     if (hist2[i].strikes && hist2[i].strikes.min) dynMin2 = Math.min(dynMin2, hist2[i].strikes.min);
     if (hist2[i].strikes && hist2[i].strikes.max) dynMax2 = Math.max(dynMax2, hist2[i].strikes.max);
+  }
+  // グラフ①と同じくcur.strikesも必ず加味してスケールを揃える
+  var curOi2 = (liveData && liveData.oi) ? liveData.oi : null;
+  if (curOi2 && curOi2.strikes) {
+    if (curOi2.strikes.min) dynMin2 = Math.min(dynMin2, curOi2.strikes.min);
+    if (curOi2.strikes.max) dynMax2 = Math.max(dynMax2, curOi2.strikes.max);
   }
   var MARGIN2 = 1500;
   if (dynMin2 === 99999999) dynMin2 = 51000;
