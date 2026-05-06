@@ -264,9 +264,23 @@ def main():
         print("先物建玉残高: 取得失敗")
 
     # ── 日次取引量（4セッション合算）──
+    # 土日・祝日をスキップして最新営業日を探す（最大14日遡る）
+    try:
+        import jpholiday
+        def is_holiday(d):
+            return d.weekday() >= 5 or jpholiday.is_holiday(d)
+    except ImportError:
+        print("jpholiday未インストール: 土日のみスキップ（祝日は対応外）")
+        def is_holiday(d):
+            return d.weekday() >= 5
+
     vol_data, vol_date, history_day = [], "", {}
-    for days_back in range(5):
+    checked = 0
+    for days_back in range(14):
         dt = today - timedelta(days=days_back)
+        if is_holiday(dt):
+            print(f"スキップ（休日）: {dt.strftime('%Y-%m-%d')} weekday={dt.weekday()}")
+            continue
         merged_history = {}
         merged_opts    = {}
         any_success    = False
@@ -284,6 +298,7 @@ def main():
                     merged_opts[key]["volume"] += o["volume"]
                 else:
                     merged_opts[key] = dict(o)
+        checked += 1
         if any_success:
             vol_date    = dt.strftime("%Y-%m-%d")
             history_day = merged_history
@@ -293,6 +308,9 @@ def main():
                 print("[先物] " + k + ": " + str(v) + "枚")
             for o in sorted(vol_data, key=lambda x: x["strike"]):
                 print("[OPT] " + o["type"] + " " + str(o["strike"]) + "円: " + str(o["volume"]) + "枚")
+            break
+        if checked >= 5:
+            print("直近5営業日でデータ取得できず")
             break
 
     if history_day and vol_date:
