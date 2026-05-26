@@ -2,7 +2,7 @@ name: JPX GS Data Fetcher
 
 on:
   schedule:
-    - cron: '0 1,9 * * 1-5'   # JST 10:00と18:00（平日のみ）
+    - cron: '0 1,6,7 * * 1-5'   # JST 10:00、15:00、16:00（平日のみ）
   workflow_dispatch:
 
 jobs:
