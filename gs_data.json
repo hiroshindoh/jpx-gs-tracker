@@ -1,5 +1,5 @@
 {
-  "updated": "2026-06-12 05:54:35",
+  "updated": "2026-06-12 10:25:08",
   "oi": {
     "date": "2026-06-05",
     "limit_month": "202606",
@@ -53,23 +53,31 @@
     }
   },
   "vol": {
-    "date": "2026-06-11",
+    "date": "2026-06-12",
     "gs": [
       {
-        "date": "2026-06-11",
+        "date": "2026-06-12",
         "product": "NK225E",
-        "contract": "NIKKEI 225 OOP C2606-65000",
-        "type": "CALL",
-        "strike": 65000,
-        "volume": 9
+        "contract": "NIKKEI 225 OOP P2607-65125",
+        "type": "PUT",
+        "strike": 65125,
+        "volume": 1
       },
       {
-        "date": "2026-06-11",
+        "date": "2026-06-12",
         "product": "NK225E",
-        "contract": "NIKKEI 225 OOP P2606-64000",
-        "type": "PUT",
-        "strike": 64000,
+        "contract": "NIKKEI 225 OOP C2607-67000",
+        "type": "CALL",
+        "strike": 67000,
         "volume": 100
+      },
+      {
+        "date": "2026-06-12",
+        "product": "NK225E",
+        "contract": "NIKKEI 225 OOP C2607-66000",
+        "type": "CALL",
+        "strike": 66000,
+        "volume": 11
       }
     ]
   },
@@ -365,6 +373,10 @@
       "M6": 1480,
       "T6": 11198,
       "T9": 15007
+    },
+    "2026-06-12": {
+      "L9": 4326,
+      "T9": 13608
     }
   },
   "oi_history": [
