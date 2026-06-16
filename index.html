@@ -410,13 +410,20 @@ function buildChart3HTML() {
     + "<div style='font-size:11px'>データ蓄積中...</div></div>";
   var ld = dates[dates.length-1];
   var SDEF = [
-    {key:"L6",label:"ラージ期近(6月)",color:"#ef5350"},
-    {key:"L9",label:"ラージ期先(9月)",color:"#ef5350"},
-    {key:"T6",label:"TPX期近(6月)",color:"#43a047"},
-    {key:"T9",label:"TPX期先(9月)",color:"#43a047"},
-    {key:"M4",label:"ミニ期近(4月)",color:"#ff9800"},
-    {key:"M5",label:"ミニ期先(5月)",color:"#ff9800"},
-    {key:"M6",label:"ミニ期先先(6月)",color:"#ff9800"}
+    {key:"L6",label:"ラージ(6月)",color:"#ef5350"},
+    {key:"L7",label:"ラージ(7月)",color:"#ef5350"},
+    {key:"L9",label:"ラージ(9月)",color:"#ef5350"},
+    {key:"L12",label:"ラージ(12月)",color:"#ef5350"},
+    {key:"T6",label:"TOPIX(6月)",color:"#43a047"},
+    {key:"T7",label:"TOPIX(7月)",color:"#43a047"},
+    {key:"T9",label:"TOPIX(9月)",color:"#43a047"},
+    {key:"T12",label:"TOPIX(12月)",color:"#43a047"},
+    {key:"M4",label:"ミニ(4月)",color:"#ff9800"},
+    {key:"M5",label:"ミニ(5月)",color:"#ff9800"},
+    {key:"M6",label:"ミニ(6月)",color:"#ff9800"},
+    {key:"M7",label:"ミニ(7月)",color:"#ff9800"},
+    {key:"M8",label:"ミニ(8月)",color:"#ff9800"},
+    {key:"M9",label:"ミニ(9月)",color:"#ff9800"}
   ];
   var sHTML = "";
   for (var si = 0; si < SDEF.length; si++) {
@@ -463,11 +470,44 @@ function buildChart4HTML() {
   }
   var dates = Object.keys(fh).sort();
   if (!dates.length) return "<div style='padding:24px;color:#888;text-align:center'>データなし</div>";
-  var SR = [
-    {label:"期近(2606)",color:"#1976d2",gX:function(d){return d.NK225_2606||0;},gY:function(d){return d.TOPIX_2606||0;}},
-    {label:"期先(2609)",color:"#d32f2f",gX:function(d){return d.NK225_2609||0;},gY:function(d){return d.TOPIX_2609||0;}},
-    {label:"mini換算",color:"#388e3c",gX:function(d){return((d.MINI_2604||0)+(d.MINI_2605||0)+(d.MINI_2606||0))/10;},gY:function(){return 0;}}
-  ];
+  // 動的限月判定：fut_oi_historyの最新エントリからNK225/TOPIXのキーを取得
+  var fhLatestDate = dates[dates.length-1];
+  var fhLatest = fh[fhLatestDate] || {};
+  var nkKeys = Object.keys(fhLatest).filter(function(k){return k.indexOf("NK225_")===0;}).sort();
+  var txKeys = Object.keys(fhLatest).filter(function(k){return k.indexOf("TOPIX_")===0;}).sort();
+  var miniKeys = Object.keys(fhLatest).filter(function(k){return k.indexOf("MINI_")===0;});
+  // 全履歴からもキーを収集
+  for (var i=0; i<dates.length; i++) {
+    Object.keys(fh[dates[i]]).forEach(function(k){
+      if (k.indexOf("NK225_")===0 && nkKeys.indexOf(k)<0) nkKeys.push(k);
+      if (k.indexOf("TOPIX_")===0 && txKeys.indexOf(k)<0) txKeys.push(k);
+      if (k.indexOf("MINI_")===0 && miniKeys.indexOf(k)<0) miniKeys.push(k);
+    });
+  }
+  nkKeys.sort(); txKeys.sort();
+  var NK_COLORS = ["#1976d2","#1565c0","#0d47a1"];
+  var TX_COLORS = ["#d32f2f","#b71c1c","#7f0000"];
+  var SR = [];
+  for (var ki=0; ki<nkKeys.length; ki++) {
+    (function(nk, tx, nc, tc, idx) {
+      var lm = nk.replace("NK225_","");
+      SR.push({
+        label: "期" + (idx===0?"近":"先") + "(" + lm + ")",
+        color: nc,
+        gX: function(d){ return d[nk]||0; },
+        gY: function(d){ return tx ? (d[tx]||0) : 0; }
+      });
+    })(nkKeys[ki], txKeys[ki]||null, NK_COLORS[ki]||"#1976d2", TX_COLORS[ki]||"#d32f2f", ki);
+  }
+  SR.push({
+    label:"mini換算",color:"#388e3c",
+    gX:function(d){
+      var sum=0;
+      miniKeys.forEach(function(k){sum+=d[k]||0;});
+      return sum/10;
+    },
+    gY:function(){return 0;}
+  });
   var aX=[0], aY=[0];
   for (var i=0; i<dates.length; i++) { var dd=fh[dates[i]]; for (var j=0; j<SR.length; j++) { aX.push(SR[j].gX(dd)); aY.push(SR[j].gY(dd)); } }
   var xMn=aX[0],xMx=aX[0],yMn=aY[0],yMx=aY[0];
@@ -535,11 +575,16 @@ function buildChart5() {
   var fDates = Object.keys(fh).sort();
   var latestFut = fDates.length ? fh[fDates[fDates.length-1]] : {};
   var prevFut   = fDates.length > 1 ? fh[fDates[fDates.length-2]] : {};
-  var nk226  = latestFut.NK225_2606 || 0;
-  var nkPrev = prevFut.NK225_2606   || 0;
+  // 動的限月：最新エントリのNK225/TOPIXキーの合計を使用
+  function sumByPrefix(obj, prefix) {
+    return Object.keys(obj).filter(function(k){return k.indexOf(prefix)===0;})
+      .reduce(function(s,k){return s+(obj[k]||0);},0);
+  }
+  var nk226  = sumByPrefix(latestFut, "NK225_");
+  var nkPrev = sumByPrefix(prevFut,   "NK225_");
   var nkDiff = nk226 - nkPrev;
-  var tx606  = latestFut.TOPIX_2606 || 0;
-  var txPrev = prevFut.TOPIX_2606   || 0;
+  var tx606  = sumByPrefix(latestFut, "TOPIX_");
+  var txPrev = sumByPrefix(prevFut,   "TOPIX_");
   var txDiff = tx606 - txPrev;
   var gs = (liveData && liveData.oi && liveData.oi.gs) ? liveData.oi.gs : [];
   var callEntries = [], putEntries = [];
