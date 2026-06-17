@@ -230,7 +230,7 @@ function buildChart1() {
   // cur.strikes（最新週）も必ず範囲に含める（gsが空でもstrikesは更新されているため）
   if (cur.strikes && cur.strikes.min) dynMin = Math.min(dynMin, cur.strikes.min);
   if (cur.strikes && cur.strikes.max) dynMax = Math.max(dynMax, cur.strikes.max);
-  var MARGIN = 1500;
+  var MARGIN = 6000;
   if (dynMin === 99999999) dynMin = 51000;
   if (dynMax === 0) dynMax = 57000;
   dynMin = Math.floor((dynMin - MARGIN) / 125) * 125;
@@ -355,7 +355,7 @@ function buildChart2HTML() {
     if (curOi2.strikes.min) dynMin2 = Math.min(dynMin2, curOi2.strikes.min);
     if (curOi2.strikes.max) dynMax2 = Math.max(dynMax2, curOi2.strikes.max);
   }
-  var MARGIN2 = 1500;
+  var MARGIN2 = 6000;
   if (dynMin2 === 99999999) dynMin2 = 51000;
   if (dynMax2 === 0) dynMax2 = 57000;
   dynMin2 = Math.floor((dynMin2 - MARGIN2) / 125) * 125;
