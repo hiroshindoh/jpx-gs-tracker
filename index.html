@@ -189,23 +189,7 @@ function buildChart1() {
   titleLeft.innerHTML = "<div style='font-weight:700;font-size:12px'>Goldman_Sachs_Japan_CoLtd</div>"
     + "<div style='font-size:11px;color:#555'>建玉残高</div>";
   titleRow.appendChild(titleLeft);
-  if (ct + pt > 0) {
-    var r=22, cx=28, cy=30, tot=ct+pt, a=(ct/tot)*2*Math.PI;
-    var x1=cx+r*Math.sin(a), y1=cy-r*Math.cos(a), lg=a>Math.PI?1:0, lr=r*0.58;
-    var clx=cx+lr*Math.sin(a/2), cly=cy-lr*Math.cos(a/2);
-    var pm=a+(2*Math.PI-a)/2, plx=cx+lr*Math.sin(pm), ply=cy-lr*Math.cos(pm);
-    var pie = document.createElementNS("http://www.w3.org/2000/svg","svg");
-    pie.setAttribute("width","115"); pie.setAttribute("height","62"); pie.setAttribute("viewBox","0 0 115 62");
-    pie.innerHTML = "<circle cx='" + cx + "' cy='" + cy + "' r='" + r + "' fill='#f5a623'/>"
-      + "<path d='M" + cx + "," + cy + " L" + cx + "," + (cy-r) + " A" + r + "," + r + " 0 " + lg + ",1 " + x1 + "," + y1 + " Z' fill='#5b9bd5'/>"
-      + "<text x='" + clx + "' y='" + (cly-5) + "' text-anchor='middle' font-size='7' fill='#fff'>call</text>"
-      + "<text x='" + clx + "' y='" + (cly+5) + "' text-anchor='middle' font-size='9' font-weight='700' fill='#fff'>" + ct + "</text>"
-      + "<text x='" + plx + "' y='" + (ply-5) + "' text-anchor='middle' font-size='7' fill='#fff'>put</text>"
-      + "<text x='" + plx + "' y='" + (ply+5) + "' text-anchor='middle' font-size='9' font-weight='700' fill='#fff'>" + pt + "</text>"
-      + "<text x='60' y='22' font-size='8' font-weight='700' fill='#555'>PCR</text>"
-      + "<text x='60' y='36' font-size='12' font-weight='700' fill='" + BUY + "'>" + pcr + "%</text>";
-    titleRow.appendChild(pie);
-  }
+
   wrap.appendChild(titleRow);
 
   var scale = document.createElement("div");
